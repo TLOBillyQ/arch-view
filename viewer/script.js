@@ -15,9 +15,7 @@
   function apply_theme(theme) {
     document.documentElement.setAttribute("data-theme", theme);
     var icon = document.querySelector(".theme_toggle_icon");
-    var label = document.querySelector(".theme_toggle_label");
     if (icon) { icon.textContent = theme === "dark" ? "\u263E" : "\u2600"; }
-    if (label) { label.textContent = theme === "dark" ? "Dark" : "Light"; }
     try { localStorage.setItem("arch_theme", theme); } catch (e) { /* noop */ }
   }
 
@@ -878,7 +876,7 @@
       if (index > 0) {
         var divider = document.createElement("span");
         divider.textContent = "/";
-        divider.className = "breadcrumb_current";
+        divider.className = "breadcrumb_sep";
         root.appendChild(divider);
       }
       if (index === view.breadcrumb.length - 1) {

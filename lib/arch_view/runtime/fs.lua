@@ -1,4 +1,4 @@
-local common = require("arch_view.runtime.common")
+local script_common = require("arch_view.runtime.host")
 
 local fs = {}
 
@@ -23,9 +23,7 @@ local exported = {
 }
 
 for _, name in ipairs(exported) do
-  fs[name] = function(...)
-    return common[name](...)
-  end
+  fs[name] = script_common[name]
 end
 
 return fs

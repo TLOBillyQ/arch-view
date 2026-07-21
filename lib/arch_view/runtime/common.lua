@@ -8,6 +8,9 @@ local _delegated_function_names = {
   "is_windows",
   "is_macos",
   "normalize_path",
+  "simplify_path",
+  "is_absolute_path",
+  "resolve_path",
   "current_dir",
   "join_path",
   "parent_dir",
@@ -58,82 +61,6 @@ function common.starts_with_segments(parts, prefix)
     end
   end
   return true
-end
-
-function common.simplify_path(path)
-  local normalized = common.normalize_path(path)
-  local prefix = ""
-  local remainder = normalized
-  if normalized:match("^%a:/") then
-    prefix = normalized:sub(1, 2)
-    remainder = normalized:sub(4)
-  elseif normalized:match("^/[A-Za-z]/") then
-    prefix = normalized:sub(2, 3)
-    remainder = normalized:sub(5)
-  elseif normalized:sub(1, 1) == "/" then
-    prefix = "/"
-    remainder = normalized:sub(2)
-  end
-  local parts = {}
-  for _, segment in ipairs(common.split(remainder, "/")) do
-    if segment ~= "" and segment ~= "." then
-      if segment == ".." then
-        if #parts > 0 and parts[#parts] ~= ".." then
-          parts[#parts] = nil
-        elseif prefix == "" then
-          parts[#parts + 1] = segment
-        end
-      else
-        parts[#parts + 1] = segment
-      end
-    end
-  end
-  local simplified = table.concat(parts, "/")
-  if prefix == "" then
-    return simplified
-  end
-  if simplified == "" then
-    return prefix == "/" and "/" or (prefix .. "/")
-  end
-  if prefix == "/" then
-    return "/" .. simplified
-  end
-  return prefix .. "/" .. simplified
-end
-
-function common.is_absolute_path(path)
-  local normalized = common.normalize_path(path)
-  if normalized:match("^%a:/") then
-    return true
-  end
-  if normalized:match("^/[A-Za-z]/") then
-    return true
-  end
-  if normalized:match("^//") then
-    return true
-  end
-  return normalized:sub(1, 1) == "/"
-end
-
-function common.resolve_path(base, path)
-  local normalized_path = common.normalize_path(path)
-  if normalized_path == "" then
-    return common.simplify_path(base)
-  end
-  if common.is_windows() and normalized_path:sub(1, 1) == "/" then
-    if normalized_path:match("^/[A-Za-z]/") then
-      return common.simplify_path(normalized_path:sub(2, 2) .. ":" .. normalized_path:sub(3))
-    end
-    local tmpdir = common.system_tmp_dir()
-    if normalized_path == "/tmp" or normalized_path:match("^/tmp/") then
-      local suffix = normalized_path:sub(5)
-      return common.simplify_path(common.join_path(tmpdir, suffix))
-    end
-  end
-  if common.is_absolute_path(normalized_path) then
-    return common.simplify_path(normalized_path)
-  end
-  return common.simplify_path(common.join_path(base or "", normalized_path))
 end
 
 function common.list_to_set(values)

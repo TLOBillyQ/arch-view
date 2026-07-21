@@ -57,13 +57,6 @@ local function _parse_args(args)
   return options
 end
 
-local function _resolve_project_path(project_root, path)
-  if path == nil then
-    return nil
-  end
-  return fs.resolve_path(project_root, path)
-end
-
 local function _normalize_options(parsed, opts)
   opts = opts or {}
   local cwd = opts.cwd and fs.resolve_path(fs.current_dir(), opts.cwd) or fs.current_dir()
@@ -73,9 +66,9 @@ local function _normalize_options(parsed, opts)
     project_root = project_root,
     config_path = parsed.config_path and fs.resolve_path(cwd, parsed.config_path)
       or (opts.default_config_path and fs.resolve_path(cwd, opts.default_config_path) or nil),
-    out_path = _resolve_project_path(project_root, parsed.out_path),
-    out_dir = _resolve_project_path(project_root, parsed.out_dir),
-    in_json = _resolve_project_path(project_root, parsed.in_json),
+    out_path = paths.resolve_project_path(project_root, parsed.out_path),
+    out_dir = paths.resolve_project_path(project_root, parsed.out_dir),
+    in_json = paths.resolve_project_path(project_root, parsed.in_json),
     open = parsed.open,
     asset_root = opts.asset_root and fs.resolve_path(cwd, opts.asset_root) or paths.default_asset_root(),
     open_path = opts.open_path,

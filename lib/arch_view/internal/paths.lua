@@ -19,4 +19,11 @@ function paths.default_viewer_out_dir(project_root)
   return fs.join_path(project_root, ".arch_view/viewer")
 end
 
+function paths.resolve_project_path(project_root, path)
+  if path == nil then
+    return nil
+  end
+  return fs.resolve_path(project_root, path)
+end
+
 return paths

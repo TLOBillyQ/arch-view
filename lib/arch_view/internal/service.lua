@@ -16,13 +16,6 @@ local function _resolved_project_root(opts)
   return fs.resolve_path(cwd, opts and opts.project_root or cwd)
 end
 
-local function _resolve_project_path(project_root, path)
-  if path == nil then
-    return nil
-  end
-  return fs.resolve_path(project_root, path)
-end
-
 local function _resolve_context(opts)
   opts = opts or {}
   local resolved, err = config_loader.resolve(opts)
@@ -117,7 +110,7 @@ end
 function service.write_scan(opts)
   opts = opts or {}
   local project_root = _resolved_project_root(opts)
-  local out_path = _resolve_project_path(project_root, opts.out_path)
+  local out_path = paths.resolve_project_path(project_root, opts.out_path)
   if out_path == nil then
     return nil, _text(
       "scan 命令需要输出文件路径",
@@ -146,7 +139,7 @@ end
 function service.export_viewer(opts)
   opts = opts or {}
   local project_root = _resolved_project_root(opts)
-  local out_dir = _resolve_project_path(project_root, opts.out_dir)
+  local out_dir = paths.resolve_project_path(project_root, opts.out_dir)
     or paths.default_viewer_out_dir(project_root)
   local asset_root = opts.asset_root and fs.resolve_path(fs.current_dir(), opts.asset_root)
     or paths.default_asset_root()
@@ -157,7 +150,7 @@ function service.export_viewer(opts)
     architecture_json_text = json_writer.encode(architecture)
   elseif opts.in_json ~= nil then
     local err
-    architecture_json_text, err = _read_architecture_json_text(_resolve_project_path(project_root, opts.in_json))
+    architecture_json_text, err = _read_architecture_json_text(paths.resolve_project_path(project_root, opts.in_json))
     if architecture_json_text == nil then
       return nil, err
     end

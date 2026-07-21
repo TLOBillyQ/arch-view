@@ -261,6 +261,11 @@ button, input, select, textarea { font: inherit; }
     font-size: 12px;
 }
 
+.breadcrumb_sep {
+    color: var(--muted);
+    font-size: 12px;
+}
+
 /* ── inline stats ──────────────────────────────────────────── */
 .toolbar_stats {
     display: flex;
@@ -706,6 +711,12 @@ button, input, select, textarea { font: inherit; }
 }
 
 /* ── fullscreen ─────────────────────────────────────────────── */
+.fullscreen_toggle.is_active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent_soft);
+}
+
 .graph_panel:fullscreen {
     display: flex;
     flex-direction: column;

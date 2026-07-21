@@ -14,7 +14,7 @@ self-contained viewer bundle.
 - `lib/arch_view/internal/service.lua`: public API orchestration and viewer export
 - `lib/arch_view/runtime/*`: filesystem, JSON, and path helpers
 - `viewer/*`: static viewer assets
-- `tests/*`: Lua contract/integration tests
+- `tests/*`: golden-output regression infra (fixture, compare, bench)
 
 ## CLI
 
@@ -77,9 +77,17 @@ Available entrypoints:
 
 ## Tests
 
+Golden-output regression: `tests/compare.lua` regenerates the scan and
+viewer outputs for `tests/fixture` and byte-compares them against
+`tests/golden`. Run from the repository root:
+
 ```sh
-lua tests/run.lua
+lua tests/compare.lua   # regression check (exit 0 = outputs match golden)
+lua tests/bench.lua 50  # analyze benchmark (CPU ms per iteration)
+tests/check_syntax.sh   # luac -p on lib/ + node --check viewer/script.js
 ```
+
+Run `lua tests/gen_golden.lua` only when intentionally updating the baseline.
 
 ---
 

@@ -553,6 +553,16 @@ function common.resolve_path(base, path)
   if normalized_path == "" then
     return common.simplify_path(base)
   end
+  if common.is_windows() and normalized_path:sub(1, 1) == "/" then
+    if normalized_path:match("^/[A-Za-z]/") then
+      return common.simplify_path(normalized_path:sub(2, 2) .. ":" .. normalized_path:sub(3))
+    end
+    local tmpdir = common.system_tmp_dir()
+    if normalized_path == "/tmp" or normalized_path:match("^/tmp/") then
+      local suffix = normalized_path:sub(5)
+      return common.simplify_path(common.join_path(tmpdir, suffix))
+    end
+  end
   if common.is_absolute_path(normalized_path) then
     return common.simplify_path(normalized_path)
   end
