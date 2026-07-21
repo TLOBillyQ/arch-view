@@ -82,10 +82,15 @@ viewer outputs for `tests/fixture` and byte-compares them against
 `tests/golden`. Run from the repository root:
 
 ```sh
+lua tests/run.lua       # unit tests (dependency-free mini harness, exit 0 = all pass)
 lua tests/compare.lua   # regression check (exit 0 = outputs match golden)
 lua tests/bench.lua 50  # analyze benchmark (CPU ms per iteration)
-tests/check_syntax.sh   # luac -p on lib/ + node --check viewer/script.js
+tests/check_syntax.sh   # luac -p on lib/ + tests/, node --check viewer/script.js
 ```
+
+Unit tests live in `tests/test_*.lua`; each file returns a table of `test_*`
+functions and `tests/run.lua` executes them — add a suite by listing it in
+`tests/run.lua`. No external test framework is required.
 
 Run `lua tests/gen_golden.lua` only when intentionally updating the baseline.
 
