@@ -1,22 +1,47 @@
-local common = require("arch_view.runtime.common")
-
 local json_reader = {}
+
+local _byte_space = string.byte(" ")
+local _byte_lf = string.byte("\n")
+local _byte_cr = string.byte("\r")
+local _byte_tab = string.byte("\t")
+local _byte_quote = string.byte("\"")
+local _byte_comma = string.byte(",")
+local _byte_colon = string.byte(":")
+local _byte_minus = string.byte("-")
+local _byte_plus = string.byte("+")
+local _byte_dot = string.byte(".")
+local _byte_open_brace = string.byte("{")
+local _byte_close_brace = string.byte("}")
+local _byte_open_bracket = string.byte("[")
+local _byte_close_bracket = string.byte("]")
+local _byte_e_lower = string.byte("e")
+local _byte_e_upper = string.byte("E")
+local _byte_f = string.byte("f")
+local _byte_n = string.byte("n")
+local _byte_t = string.byte("t")
+
+local _escape_replacements = {
+    [string.byte("\"")] = "\"",
+    [string.byte("\\")] = "\\",
+    [string.byte("/")] = "/",
+    [string.byte("b")] = "\b",
+    [string.byte("f")] = "\f",
+    [string.byte("n")] = "\n",
+    [string.byte("r")] = "\r",
+    [string.byte("t")] = "\t",
+}
 
 local function _build_error(text, index)
     error("json decode error at " .. tostring(index) .. ": " .. tostring(text))
 end
 
-local function _char_at(text, index)
-    return string.sub(text, index, index)
-end
-
-local function _is_whitespace(ch)
-    return ch == " " or ch == "\n" or ch == "\r" or ch == "\t"
+local function _is_whitespace(byte)
+    return byte == _byte_space or byte == _byte_lf or byte == _byte_cr or byte == _byte_tab
 end
 
 local function _skip_whitespace(text, index)
     local cursor = index
-    while cursor <= #text and _is_whitespace(_char_at(text, cursor)) do
+    while cursor <= #text and _is_whitespace(string.byte(text, cursor)) do
         cursor = cursor + 1
     end
     return cursor
@@ -25,39 +50,27 @@ end
 local function _parse_string(text, index)
     local cursor = index + 1
     local parts = {}
-    while cursor <= #text do
-        local ch = _char_at(text, cursor)
-        if ch == "\"" then
-            return table.concat(parts), cursor + 1
+    local chunk_start = cursor
+    while true do
+        local special = string.find(text, "[\"\\]", cursor)
+        if special == nil then
+            _build_error("unterminated string", index)
         end
-        if ch == "\\" then
-            local next_ch = _char_at(text, cursor + 1)
-            if next_ch == "\"" or next_ch == "\\" or next_ch == "/" then
-                parts[#parts + 1] = next_ch
-            elseif next_ch == "b" then
-                parts[#parts + 1] = "\b"
-            elseif next_ch == "f" then
-                parts[#parts + 1] = "\f"
-            elseif next_ch == "n" then
-                parts[#parts + 1] = "\n"
-            elseif next_ch == "r" then
-                parts[#parts + 1] = "\r"
-            elseif next_ch == "t" then
-                parts[#parts + 1] = "\t"
-            else
-                _build_error("unsupported escape sequence", cursor)
-            end
-            cursor = cursor + 2
-        else
-            parts[#parts + 1] = ch
-            cursor = cursor + 1
+        parts[#parts + 1] = string.sub(text, chunk_start, special - 1)
+        if string.byte(text, special) == _byte_quote then
+            return table.concat(parts), special + 1
         end
+        local escape = _escape_replacements[string.byte(text, special + 1)]
+        if escape == nil then
+            _build_error("unsupported escape sequence", special)
+        end
+        parts[#parts + 1] = escape
+        cursor = special + 2
+        chunk_start = cursor
     end
-    _build_error("unterminated string", index)
 end
 
-local function _digit_value(ch)
-    local byte = string.byte(ch or "")
+local function _digit_value(byte)
     if byte == nil then
         return nil
     end
@@ -71,15 +84,15 @@ end
 local function _parse_number(text, index)
     local cursor = index
     local sign = 1
-    if _char_at(text, cursor) == "-" then
+    if string.byte(text, cursor) == _byte_minus then
         sign = -1
         cursor = cursor + 1
     end
 
     local int_value = 0
     local digit_count = 0
-    while cursor <= #text do
-        local digit = _digit_value(_char_at(text, cursor))
+    while true do
+        local digit = _digit_value(string.byte(text, cursor))
         if digit == nil then
             break
         end
@@ -92,12 +105,12 @@ local function _parse_number(text, index)
     end
 
     local value = int_value
-    if _char_at(text, cursor) == "." then
+    if string.byte(text, cursor) == _byte_dot then
         cursor = cursor + 1
         local divisor = 1
         local fraction_count = 0
-        while cursor <= #text do
-            local digit = _digit_value(_char_at(text, cursor))
+        while true do
+            local digit = _digit_value(string.byte(text, cursor))
             if digit == nil then
                 break
             end
@@ -114,19 +127,19 @@ local function _parse_number(text, index)
 
     local exponent = 0
     local exp_sign = 1
-    local exp_marker = _char_at(text, cursor)
-    if exp_marker == "e" or exp_marker == "E" then
+    local exp_marker = string.byte(text, cursor)
+    if exp_marker == _byte_e_lower or exp_marker == _byte_e_upper then
         cursor = cursor + 1
-        local exp_ch = _char_at(text, cursor)
-        if exp_ch == "-" then
+        local exp_byte = string.byte(text, cursor)
+        if exp_byte == _byte_minus then
             exp_sign = -1
             cursor = cursor + 1
-        elseif exp_ch == "+" then
+        elseif exp_byte == _byte_plus then
             cursor = cursor + 1
         end
         local exp_count = 0
-        while cursor <= #text do
-            local digit = _digit_value(_char_at(text, cursor))
+        while true do
+            local digit = _digit_value(string.byte(text, cursor))
             if digit == nil then
                 break
             end
@@ -158,7 +171,7 @@ local _parse_value
 local function _parse_array(text, index)
     local cursor = _skip_whitespace(text, index + 1)
     local values = {}
-    if _char_at(text, cursor) == "]" then
+    if string.byte(text, cursor) == _byte_close_bracket then
         return values, cursor + 1
     end
     while cursor <= #text do
@@ -166,11 +179,11 @@ local function _parse_array(text, index)
         value, cursor = _parse_value(text, cursor)
         values[#values + 1] = value
         cursor = _skip_whitespace(text, cursor)
-        local ch = _char_at(text, cursor)
-        if ch == "]" then
+        local byte = string.byte(text, cursor)
+        if byte == _byte_close_bracket then
             return values, cursor + 1
         end
-        if ch ~= "," then
+        if byte ~= _byte_comma then
             _build_error("expected ',' or ']'", cursor)
         end
         cursor = _skip_whitespace(text, cursor + 1)
@@ -181,27 +194,27 @@ end
 local function _parse_object(text, index)
     local cursor = _skip_whitespace(text, index + 1)
     local object = {}
-    if _char_at(text, cursor) == "}" then
+    if string.byte(text, cursor) == _byte_close_brace then
         return object, cursor + 1
     end
     while cursor <= #text do
-        if _char_at(text, cursor) ~= "\"" then
+        if string.byte(text, cursor) ~= _byte_quote then
             _build_error("expected string key", cursor)
         end
         local key
         key, cursor = _parse_string(text, cursor)
         cursor = _skip_whitespace(text, cursor)
-        if _char_at(text, cursor) ~= ":" then
+        if string.byte(text, cursor) ~= _byte_colon then
             _build_error("expected ':' after key", cursor)
         end
         cursor = _skip_whitespace(text, cursor + 1)
         object[key], cursor = _parse_value(text, cursor)
         cursor = _skip_whitespace(text, cursor)
-        local ch = _char_at(text, cursor)
-        if ch == "}" then
+        local byte = string.byte(text, cursor)
+        if byte == _byte_close_brace then
             return object, cursor + 1
         end
-        if ch ~= "," then
+        if byte ~= _byte_comma then
             _build_error("expected ',' or '}'", cursor)
         end
         cursor = _skip_whitespace(text, cursor + 1)
@@ -211,26 +224,26 @@ end
 
 function _parse_value(text, index)
     local cursor = _skip_whitespace(text, index)
-    local ch = _char_at(text, cursor)
-    if ch == "\"" then
+    local byte = string.byte(text, cursor)
+    if byte == _byte_quote then
         return _parse_string(text, cursor)
     end
-    if ch == "{" then
+    if byte == _byte_open_brace then
         return _parse_object(text, cursor)
     end
-    if ch == "[" then
+    if byte == _byte_open_bracket then
         return _parse_array(text, cursor)
     end
-    if ch == "t" then
+    if byte == _byte_t then
         return _parse_literal(text, cursor, "true", true)
     end
-    if ch == "f" then
+    if byte == _byte_f then
         return _parse_literal(text, cursor, "false", false)
     end
-    if ch == "n" then
+    if byte == _byte_n then
         return _parse_literal(text, cursor, "null", nil)
     end
-    if ch == "-" or common.to_integer(ch) ~= nil then
+    if byte == _byte_minus or _digit_value(byte) ~= nil then
         return _parse_number(text, cursor)
     end
     _build_error("unexpected token", cursor)

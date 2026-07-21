@@ -1,0 +1,28 @@
+{
+  "source_roots": ["src"],
+  "component_rules": [
+    { "name": "util", "match": ["^src%.util$", "^src%.util%..+"], "component": "util" },
+    { "name": "core", "match": ["^src%.core$", "^src%.core%..+"], "component": "core" },
+    { "name": "net", "match": ["^src%.net$", "^src%.net%..+"], "component": "net" },
+    { "name": "store", "match": ["^src%.store$", "^src%.store%..+"], "component": "store" },
+    { "name": "ui", "match": ["^src%.ui$", "^src%.ui%..+"], "component": "ui" },
+    { "name": "app", "match": ["^src%.app$", "^src%.app%..+"], "component": "app" }
+  ],
+  "abstract_rules": [
+    { "name": "net_api", "match": ["^src%.net%.api$"] }
+  ],
+  "forbidden_dependency_rules": [
+    {
+      "name": "store_no_net",
+      "description": "store must not depend on net",
+      "from": ["^src%.store$", "^src%.store%..+"],
+      "to": ["^src%.net$", "^src%.net%..+"]
+    },
+    {
+      "name": "core_no_ui",
+      "description": "core must not depend on ui",
+      "from": ["^src%.core$", "^src%.core%..+"],
+      "to": ["^src%.ui$", "^src%.ui%..+"]
+    }
+  ]
+}

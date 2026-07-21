@@ -121,6 +121,21 @@ local function _raw_file_exists(path)
   return true
 end
 
+-- 纯 Lua 目录探测：POSIX 上打开 "<dir>/." 仅当路径解析为已存在目录时成功，
+-- 普通文件失败（ENOTDIR），符号链接按其目标处理，与 test -d 的语义一致。
+local function _raw_dir_exists(path)
+  if path == "" then
+    return false
+  end
+  local probe = path:gsub("/+$", "") .. "/."
+  local file = io.open(probe, "rb")
+  if file == nil then
+    return false
+  end
+  file:close()
+  return true
+end
+
 local function _base64_encode(text)
   local source = tostring(text or "")
   local parts = {}
@@ -374,21 +389,33 @@ function common.sorted_keys(map)
   return keys
 end
 
+-- package.config 在进程内不变，加载时求值一次即可。
+local _is_windows_host = package.config:sub(1, 1) == "\\"
+
 function common.is_windows()
-  return package.config:sub(1, 1) == "\\"
+  return _is_windows_host
 end
 
+-- uname 结果在进程内不变，首次调用后缓存，避免重复 popen。
+local _cached_is_macos = nil
+
 function common.is_macos()
+  if _cached_is_macos ~= nil then
+    return _cached_is_macos
+  end
   if common.is_windows() then
-    return false
+    _cached_is_macos = false
+    return _cached_is_macos
   end
   local process = io.popen("uname")
   if process == nil then
-    return false
+    _cached_is_macos = false
+    return _cached_is_macos
   end
   local content = process:read("*l") or ""
   process:close()
-  return common.normalize_path(content) == "Darwin"
+  _cached_is_macos = common.normalize_path(content) == "Darwin"
+  return _cached_is_macos
 end
 
 function common.normalize_path(path)
@@ -462,28 +489,43 @@ function common.simplify_path(path)
   return prefix .. "/" .. simplified
 end
 
+-- 纯 Lua 进程无法切换工作目录，cwd 在进程内不变，首次解析后缓存，
+-- 避免每次 analyze 重复 popen pwd。各分支返回值与原实现逐字节一致。
+local _cached_current_dir = nil
+
 function common.current_dir()
+  if _cached_current_dir ~= nil then
+    return _cached_current_dir
+  end
+
+  local resolved = nil
   if common.is_windows() then
     local env_path = os.getenv("CD") or os.getenv("PWD")
     if env_path ~= nil and env_path ~= "" then
-      return common.normalize_path(env_path)
+      resolved = common.normalize_path(env_path)
+    else
+      local process = io.popen("cd")
+      if process ~= nil then
+        local path = process:read("*l") or "."
+        process:close()
+        resolved = common.normalize_path(path)
+      else
+        resolved = "."
+      end
     end
-    local process = io.popen("cd")
-    if process ~= nil then
+  else
+    local process = io.popen("pwd")
+    if process == nil then
+      resolved = "."
+    else
       local path = process:read("*l") or "."
       process:close()
-      return common.normalize_path(path)
+      resolved = common.normalize_path(path)
     end
-    return "."
   end
 
-  local process = io.popen("pwd")
-  if process == nil then
-    return "."
-  end
-  local path = process:read("*l") or "."
-  process:close()
-  return common.normalize_path(path)
+  _cached_current_dir = resolved
+  return resolved
 end
 
 function common.is_absolute_path(path)
@@ -687,6 +729,11 @@ function common.ensure_dir(path)
 
   local normalized = common.normalize_path(path)
   if not common.is_windows() then
+    -- 目录已存在时 mkdir -p 本就静默成功，纯 Lua 探测命中即可直接返回；
+    -- 探测失败（不存在、或同名普通文件等）一律走原 mkdir -p，错误消息不变。
+    if _raw_dir_exists(normalized) then
+      return true
+    end
     local command = "mkdir -p " .. common.shell_quote(normalized)
     local ok, kind, code = os.execute(command)
     local success = _os_execute_success(ok, kind, code)
@@ -804,6 +851,16 @@ end
 function common.path_exists(path)
   local normalized = common.normalize_path(path)
   if not common.is_windows() then
+    -- POSIX 上 io.open 对文件与目录都能打开，可作存在性探测；
+    -- 仅在无法确定时（如无读权限 EACCES）回退原 test -e 子进程，语义不变。
+    local probe_file, _, probe_errno = io.open(normalized, "rb")
+    if probe_file ~= nil then
+      probe_file:close()
+      return true
+    end
+    if probe_errno == 2 then
+      return false
+    end
     local command = "[ -e " .. common.shell_quote(normalized) .. " ]"
     local ok, kind, code = os.execute(command)
     return _os_execute_success(ok, kind, code)
@@ -856,6 +913,10 @@ end
 function common.is_dir(path)
   local normalized = common.normalize_path(path)
   if not common.is_windows() then
+    -- 探测命中即可确定为目录；不命中（文件、不存在、无权限等）回退原 test -d。
+    if _raw_dir_exists(normalized) then
+      return true
+    end
     local command = "[ -d " .. common.shell_quote(normalized) .. " ]"
     local ok, kind, code = os.execute(command)
     return _os_execute_success(ok, kind, code)
@@ -879,6 +940,14 @@ function common.remove_path(path)
 
   local normalized = common.normalize_path(path)
   if not common.is_windows() then
+    -- 普通文件/符号链接用 os.remove 等价于 rm -rf（同为 unlink），省去子进程；
+    -- 目录或 os.remove 失败时走原 rm -rf，行为与错误消息不变。
+    if not _raw_dir_exists(normalized) then
+      local removed = os.remove(normalized)
+      if removed then
+        return true
+      end
+    end
     local command = "rm -rf " .. common.shell_quote(normalized)
     local ok, kind, code = os.execute(command)
     local success = _os_execute_success(ok, kind, code)

@@ -2,14 +2,17 @@ local common = require("arch_view.runtime.common")
 
 local json_writer = {}
 
+local _escape_replacements = {
+    ["\\"] = "\\\\",
+    ["\""] = "\\\"",
+    ["\r"] = "\\r",
+    ["\n"] = "\\n",
+    ["\t"] = "\\t",
+}
+
 local function _escape_string(value)
     local escaped = tostring(value or "")
-    escaped = escaped:gsub("\\", "\\\\")
-    escaped = escaped:gsub("\"", "\\\"")
-    escaped = escaped:gsub("\r", "\\r")
-    escaped = escaped:gsub("\n", "\\n")
-    escaped = escaped:gsub("\t", "\\t")
-    return escaped
+    return (escaped:gsub("[\"\\\r\n\t]", _escape_replacements))
 end
 
 local function _is_array(value)
@@ -34,7 +37,7 @@ end
 
 local function _encode(value)
     local value_type = type(value)
-    if value == nil then
+    if value_type == "nil" then
         return "null"
     end
     if value_type == "string" then

@@ -32,6 +32,7 @@
   var LAYER_GAP = 220;
   var SURFACE_PADDING_X = 72;
   var SURFACE_PADDING_BOTTOM = 80;
+  var SURFACE_MIN_WIDTH = 1480;
   var LABEL_Y_OFFSET = 28;
   var TRIANGLE_OFFSET = 10;
   var NODE_EDGE_GAP = 14;
@@ -342,6 +343,11 @@
     return null;
   }
 
+  function first_explicit_boolean(primary, secondary) {
+    var value = explicit_boolean(primary);
+    return value === null ? explicit_boolean(secondary) : value;
+  }
+
   function normalize_node(
     raw_node,
     index,
@@ -362,14 +368,8 @@
     var module_ref = node.module_id || node.module || (modules[id] ? id : null);
     var module_info = module_ref ? modules[module_ref] : null;
     var raw_view_key = node.view_key || node.child_view_key || node.next_view || null;
-    var explicit_leaf = explicit_boolean(node.leaf);
-    if (explicit_leaf === null) {
-      explicit_leaf = explicit_boolean(node.is_leaf);
-    }
-    var explicit_drillable = explicit_boolean(node.drillable);
-    if (explicit_drillable === null) {
-      explicit_drillable = explicit_boolean(node.is_drillable);
-    }
+    var explicit_leaf = first_explicit_boolean(node.leaf, node.is_leaf);
+    var explicit_drillable = first_explicit_boolean(node.drillable, node.is_drillable);
     var has_real_child_view =
       !!raw_view_key && available_view_lookup[raw_view_key] === true;
     var drillable = explicit_drillable;
@@ -556,30 +556,22 @@
       });
     }
 
+    var count =
+      Number(edge.count) || (module_edges.length > 0 ? module_edges.length : 1);
     return {
       id: edge.id || fallback_id || from + "->" + to,
       from: from,
       to: to,
       from_layer: typeof edge.from_layer === "number" ? edge.from_layer : undefined,
       to_layer: typeof edge.to_layer === "number" ? edge.to_layer : undefined,
-      count:
-        Number(edge.count) ||
-        (module_edges.length > 0 ? module_edges.length : 1),
+      count: count,
       type: edge.type || edge.kind || "direct",
       cycle: cycle,
       module_edges: module_edges,
       tooltip_lines: tooltip_lines,
       route_points: normalize_route_points(edge),
       path: "",
-      label:
-        edge.label ||
-        edge_label({
-          from: from,
-          to: to,
-          count:
-            Number(edge.count) ||
-            (module_edges.length > 0 ? module_edges.length : 1),
-        }),
+      label: edge.label || edge_label({ from: from, to: to, count: count }),
     };
   }
 
@@ -872,15 +864,11 @@
     source_code.classList.toggle("empty_state", !node.source_text);
   }
 
-  function update_summary(view) {
+  function update_summary(view, cycle_count) {
     by_id("current_view_label").textContent = view.title || view.key;
     by_id("node_count_label").textContent = String(view.nodes.length);
     by_id("edge_count_label").textContent = String(view.display_edges.length);
-    by_id("cycle_count_label").textContent = String(
-      view.nodes.filter(function (node) {
-        return node.cycle;
-      }).length,
-    );
+    by_id("cycle_count_label").textContent = String(cycle_count);
   }
 
   function render_breadcrumb(view, state) {
@@ -919,12 +907,18 @@
     var max_width = 0;
     var max_height = 0;
 
+    /* id lookup table: preserves the first-match semantics of nodes.find() */
+    var node_by_id = Object.create(null);
+    view.nodes.forEach(function (node) {
+      if (node_by_id[node.id] === undefined) {
+        node_by_id[node.id] = node;
+      }
+    });
+
     layers.forEach(function (layer, layer_index) {
       var y = null;
       layer.nodes.forEach(function (node_id) {
-        var view_node = view.nodes.find(function (entry) {
-          return entry.id === node_id;
-        });
+        var view_node = node_by_id[node_id];
         var rect = view_node && view_node.geometry;
         if (rect && finite_number(rect.y)) {
           y = y === null ? rect.y : Math.min(y, rect.y);
@@ -937,12 +931,10 @@
 
       var node_count = layer.nodes.length;
       var layer_total_width = node_count * NODE_WIDTH + Math.max(0, node_count - 1) * CARD_GAP_X;
-      var layer_start_x = Math.max(SURFACE_PADDING_X, (1480 - layer_total_width) / 2);
+      var layer_start_x = Math.max(SURFACE_PADDING_X, (SURFACE_MIN_WIDTH - layer_total_width) / 2);
 
       layer.nodes.forEach(function (node_id, index) {
-        var view_node = view.nodes.find(function (entry) {
-          return entry.id === node_id;
-        });
+        var view_node = node_by_id[node_id];
         var rect = view_node && view_node.geometry;
         var width = rect && finite_number(rect.width) ? rect.width : NODE_WIDTH;
         var height =
@@ -973,7 +965,7 @@
       });
     });
 
-    var surface_width = Math.max(max_width, 1480);
+    var surface_width = Math.max(max_width, SURFACE_MIN_WIDTH);
     var surface_height = Math.max(
       max_height,
       LAYER_TOP +
@@ -990,6 +982,14 @@
     };
   }
 
+  function rect_center_x(rect) {
+    return rect.x + rect.width / 2;
+  }
+
+  function rect_center_y(rect) {
+    return rect.y + rect.height / 2;
+  }
+
   function make_route_points(edge, positions) {
     if (edge.route_points.length > 0) {
       return edge.route_points;
@@ -1000,24 +1000,16 @@
       return [];
     }
 
-    function center_x(rect) {
-      return rect.x + rect.width / 2;
-    }
-
-    function center_y(rect) {
-      return rect.y + rect.height / 2;
-    }
-
     if (edge.from_layer === edge.to_layer) {
-      var from_side_right = center_x(to) >= center_x(from);
+      var from_side_right = rect_center_x(to) >= rect_center_x(from);
       var start_x = from_side_right
         ? from.x + from.width + NODE_EDGE_GAP
         : from.x - NODE_EDGE_GAP;
       var end_x = from_side_right
         ? to.x - NODE_EDGE_GAP
         : to.x + to.width + NODE_EDGE_GAP;
-      var start_y = center_y(from);
-      var end_y = center_y(to);
+      var start_y = rect_center_y(from);
+      var end_y = rect_center_y(to);
       var lane_x = (start_x + end_x) / 2;
       return [
         [start_x, start_y],
@@ -1028,8 +1020,8 @@
     }
 
     var downward = edge.to_layer > edge.from_layer;
-    var start_x = center_x(from);
-    var end_x = center_x(to);
+    var start_x = rect_center_x(from);
+    var end_x = rect_center_x(to);
     var start_y = downward
       ? from.y + from.height + NODE_EDGE_GAP
       : from.y - NODE_EDGE_GAP;
@@ -1148,6 +1140,19 @@
     );
   }
 
+  function edge_tooltip_lines(edge) {
+    return edge.tooltip_lines.length > 0
+      ? edge.tooltip_lines
+      : [{ text: edge.label, cycle: edge.cycle }];
+  }
+
+  function node_tooltip_line(node) {
+    return {
+      text: plain_label(node.full_name || node.module_id || node.id),
+      cycle: node.cycle,
+    };
+  }
+
   var COMPONENT_PALETTE = [
     "#5b8def", "#e8a838", "#50c878", "#c77dba",
     "#50e3c2", "#e85d75", "#d4a44c", "#7b68ee",
@@ -1165,12 +1170,22 @@
     return color;
   }
 
-  function highlight_edges_for_node(node_id) {
-    var svg = by_id("graph_svg");
-    var groups = svg.querySelectorAll(".edge_group");
+  function each_edge_group(fn) {
+    var groups = by_id("graph_svg").querySelectorAll(".edge_group");
     for (var i = 0; i < groups.length; i++) {
-      var g = groups[i];
-      var base = g.classList.contains("edge_is_cycle") ? "edge_group edge_is_cycle" : "edge_group";
+      fn(groups[i]);
+    }
+  }
+
+  function edge_base_class(g) {
+    return g.classList.contains("edge_is_cycle")
+      ? "edge_group edge_is_cycle"
+      : "edge_group";
+  }
+
+  function highlight_edges_for_node(node_id) {
+    each_edge_group(function (g) {
+      var base = edge_base_class(g);
       var from = g.getAttribute("data-from");
       var to = g.getAttribute("data-to");
       if (from === node_id) {
@@ -1180,17 +1195,25 @@
       } else {
         g.className.baseVal = base + " edge_dimmed";
       }
-    }
+    });
   }
 
   function clear_edge_highlights() {
-    var svg = by_id("graph_svg");
-    var groups = svg.querySelectorAll(".edge_group");
-    for (var i = 0; i < groups.length; i++) {
-      var g = groups[i];
-      var base = g.classList.contains("edge_is_cycle") ? "edge_group edge_is_cycle" : "edge_group";
-      g.className.baseVal = base;
-    }
+    each_edge_group(function (g) {
+      g.className.baseVal = edge_base_class(g);
+    });
+  }
+
+  function edge_same_layer(edge, node_layer_lookup) {
+    var from_layer =
+      typeof edge.from_layer === "number"
+        ? edge.from_layer
+        : node_layer_lookup[edge.from];
+    var to_layer =
+      typeof edge.to_layer === "number"
+        ? edge.to_layer
+        : node_layer_lookup[edge.to];
+    return from_layer === to_layer;
   }
 
   function update_edges_for_node(node_id, state) {
@@ -1210,9 +1233,10 @@
         return;
       }
       edge.route_points = new_route;
-      var fl = typeof edge.from_layer === "number" ? edge.from_layer : node_layer_lookup[edge.from];
-      var tl = typeof edge.to_layer === "number" ? edge.to_layer : node_layer_lookup[edge.to];
-      edge.path = smooth_path(edge.route_points, fl === tl);
+      edge.path = smooth_path(
+        edge.route_points,
+        edge_same_layer(edge, node_layer_lookup),
+      );
       if (!edge.path) {
         edge.route_points = old_route;
         edge.path = old_path;
@@ -1322,12 +1346,7 @@
 
     button.addEventListener("mouseenter", function (event) {
       var point = surface_point_from_event(event);
-      var lines = [
-        {
-          text: plain_label(node.full_name || node.module_id || node.id),
-          cycle: node.cycle,
-        },
-      ];
+      var lines = [node_tooltip_line(node)];
       var in_count = node.indicators.incoming.dependencies.length;
       var out_count = node.indicators.outgoing.dependencies.length;
       if (in_count > 0 || out_count > 0) {
@@ -1339,12 +1358,7 @@
     button.addEventListener("mousemove", function (event) {
       var point = surface_point_from_event(event);
       set_tooltip(
-        tooltip_markup("Module", [
-          {
-            text: plain_label(node.full_name || node.module_id || node.id),
-            cycle: node.cycle,
-          },
-        ]),
+        tooltip_markup("Module", [node_tooltip_line(node)]),
         point.x,
         point.y,
       );
@@ -1419,6 +1433,17 @@
     });
   }
 
+  /* builds e.g. "graph_edge edge_type_direct" (+ " edge_is_cycle") for kind "edge",
+     and "graph_arrow arrow_type_direct" (+ " arrow_is_cycle") for kind "arrow" */
+  function typed_svg_class(base, kind, edge) {
+    return (
+      base +
+      " " + kind + "_type_" +
+      html_escape(edge.type || "direct") +
+      (edge.cycle ? " " + kind + "_is_cycle" : "")
+    );
+  }
+
   function render_edges(view) {
     var svg = by_id("graph_svg");
     svg.innerHTML = "";
@@ -1433,22 +1458,12 @@
 
       var backdrop = make_svg_el("path");
       backdrop.setAttribute("d", edge.path);
-      backdrop.setAttribute(
-        "class",
-        "graph_edge_backdrop edge_type_" +
-          html_escape(edge.type || "direct") +
-          (edge.cycle ? " edge_is_cycle" : ""),
-      );
+      backdrop.setAttribute("class", typed_svg_class("graph_edge_backdrop", "edge", edge));
       group.appendChild(backdrop);
 
       var path = make_svg_el("path");
       path.setAttribute("d", edge.path);
-      path.setAttribute(
-        "class",
-        "graph_edge edge_type_" +
-          html_escape(edge.type || "direct") +
-          (edge.cycle ? " edge_is_cycle" : ""),
-      );
+      path.setAttribute("class", typed_svg_class("graph_edge", "edge", edge));
       group.appendChild(path);
 
       var hit = make_svg_el("path");
@@ -1456,12 +1471,8 @@
       hit.setAttribute("class", "graph_edge_hit");
       hit.addEventListener("mouseenter", function (event) {
         var point = surface_point_from_event(event);
-        var tooltip_lines =
-          edge.tooltip_lines.length > 0
-            ? edge.tooltip_lines
-            : [{ text: edge.label, cycle: edge.cycle }];
         set_tooltip(
-          tooltip_markup("Dependency", tooltip_lines),
+          tooltip_markup("Dependency", edge_tooltip_lines(edge)),
           point.x,
           point.y,
         );
@@ -1469,12 +1480,7 @@
       hit.addEventListener("mousemove", function (event) {
         var point = surface_point_from_event(event);
         set_tooltip(
-          tooltip_markup(
-            "Dependency",
-            edge.tooltip_lines.length > 0
-              ? edge.tooltip_lines
-              : [{ text: edge.label, cycle: edge.cycle }],
-          ),
+          tooltip_markup("Dependency", edge_tooltip_lines(edge)),
           point.x,
           point.y,
         );
@@ -1490,12 +1496,7 @@
 
       var arrow = make_svg_el("polygon");
       arrow.setAttribute("points", arrow_shape);
-      arrow.setAttribute(
-        "class",
-        "graph_arrow arrow_type_" +
-          html_escape(edge.type || "direct") +
-          (edge.cycle ? " arrow_is_cycle" : ""),
-      );
+      arrow.setAttribute("class", typed_svg_class("graph_arrow", "arrow", edge));
       group.appendChild(arrow);
 
       svg.appendChild(group);
@@ -1550,13 +1551,13 @@
         ? state.view_state[view_key].selected_leaf_id || null
         : null;
     }
-    render_breadcrumb(view, state);
-    update_summary(view);
-
-    var notice = by_id("graph_notice");
     var cycle_nodes = view.nodes.filter(function (node) {
       return node.cycle;
     }).length;
+    render_breadcrumb(view, state);
+    update_summary(view, cycle_nodes);
+
+    var notice = by_id("graph_notice");
     if (cycle_nodes > 0) {
       notice.hidden = false;
       notice.textContent =
@@ -1579,10 +1580,10 @@
     state.current_node_layer_lookup = node_layer_lookup;
     view.display_edges.forEach(function (edge) {
       edge.route_points = make_route_points(edge, layout.positions);
-      var fl = typeof edge.from_layer === "number" ? edge.from_layer : node_layer_lookup[edge.from];
-      var tl = typeof edge.to_layer === "number" ? edge.to_layer : node_layer_lookup[edge.to];
-      var same_layer = fl === tl;
-      edge.path = smooth_path(edge.route_points, same_layer);
+      edge.path = smooth_path(
+        edge.route_points,
+        edge_same_layer(edge, node_layer_lookup),
+      );
     });
 
     var surface = by_id("graph_surface");

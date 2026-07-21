@@ -5,8 +5,6 @@
 
 /* ── shared tokens ──────────────────────────────────────────── */
 :root {
-    --radius:       20px;
-    --radius_sm:    14px;
     --radius_pill:  999px;
     --ease:         cubic-bezier(0.22, 0.68, 0, 1);
     --mono:         "SFMono-Regular", "SF Mono", Menlo, Monaco, Consolas, monospace;
@@ -17,7 +15,6 @@
 :root,
 [data-theme="dark"] {
     --bg:               #08090c;
-    --bg_layer:         #0e1014;
     --bg_glow_warm:     rgba(200, 120, 50, 0.05);
     --bg_glow_cool:     rgba(58, 140, 90, 0.04);
     --surface:          rgba(255, 255, 255, 0.05);
@@ -30,11 +27,8 @@
     --accent:           #f5b06a;
     --accent_soft:      rgba(245, 176, 106, 0.14);
     --abstract:         #6eddaf;
-    --abstract_soft:    rgba(110, 221, 175, 0.12);
-    --abstract_bg:      rgba(110, 221, 175, 0.08);
     --cycle:            #ff7b78;
     --cycle_soft:       rgba(255, 123, 120, 0.14);
-    --cycle_bg:         rgba(255, 123, 120, 0.08);
     --edge_halo:        rgba(8, 9, 12, 0.85);
     --edge_default:     rgba(180, 170, 155, 0.50);
     --edge_default_strong: rgba(180, 170, 155, 0.70);
@@ -44,12 +38,8 @@
     --edge_highlight_out: rgba(255, 176, 80, 0.92);
     --edge_dim:         0.15;
     --graph_bg:         rgba(255, 255, 255, 0.018);
-    --graph_border:     rgba(255, 255, 255, 0.06);
     --graph_grid:       rgba(255, 255, 255, 0.035);
     --layer_rule:       #ffffff;
-    --shadow:           0 24px 70px rgba(0, 0, 0, 0.50);
-    --shadow_soft:      0 8px 32px rgba(0, 0, 0, 0.30);
-    --hover_shadow:     rgba(0, 0, 0, 0.45);
     --card_start:       rgba(255, 255, 255, 0.055);
     --card_end:         rgba(255, 255, 255, 0.035);
     --card_border:      rgba(255, 255, 255, 0.12);
@@ -66,13 +56,8 @@
     --label_border:     rgba(255, 255, 255, 0.10);
     --label_glow:       rgba(8, 9, 12, 0.80);
     --label_shadow:     0 8px 24px rgba(0, 0, 0, 0.30);
-    --btn_bg:           rgba(15, 16, 22, 0.92);
-    --btn_glow:         rgba(8, 9, 12, 0.80);
-    --btn_shadow:       0 8px 18px rgba(0, 0, 0, 0.25);
-    --btn_arrow:        rgba(200, 190, 175, 0.80);
     --notice_bg:        rgba(255, 123, 120, 0.08);
     --notice_border:    rgba(255, 123, 120, 0.18);
-    --tag_bg:           rgba(255, 255, 255, 0.06);
     --token_bg:         rgba(255, 255, 255, 0.05);
     --token_border:     rgba(255, 255, 255, 0.08);
     --legend_abstract_bg:     rgba(110, 221, 175, 0.10);
@@ -87,7 +72,6 @@
     --tooltip_text:     #f0ece5;
     --tooltip_title:    rgba(245, 200, 160, 0.92);
     --tooltip_cycle:    #ffb5b5;
-    --topbar_bg:        rgba(8, 9, 12, 0.82);
     --scrollbar_thumb:  rgba(255, 255, 255, 0.10);
     --selection_bg:     rgba(245, 176, 106, 0.30);
     --grain_opacity:    0.035;
@@ -97,7 +81,6 @@
 /* ── light theme ────────────────────────────────────────────── */
 [data-theme="light"] {
     --bg:               #f4f0e8;
-    --bg_layer:         #ebe5da;
     --bg_glow_warm:     rgba(166, 105, 67, 0.18);
     --bg_glow_cool:     rgba(62, 116, 85, 0.14);
     --surface:          rgba(255, 250, 241, 0.92);
@@ -110,11 +93,8 @@
     --accent:           #8f4a2d;
     --accent_soft:      rgba(143, 74, 45, 0.12);
     --abstract:         #0f7a42;
-    --abstract_soft:    rgba(15, 122, 66, 0.14);
-    --abstract_bg:      rgba(15, 122, 66, 0.06);
     --cycle:            #b92020;
     --cycle_soft:       rgba(185, 32, 32, 0.14);
-    --cycle_bg:         rgba(185, 32, 32, 0.06);
     --edge_halo:        rgba(255, 251, 245, 0.98);
     --edge_default:     rgba(72, 58, 40, 0.82);
     --edge_default_strong: rgba(72, 58, 40, 0.96);
@@ -124,12 +104,8 @@
     --edge_highlight_out: rgba(200, 130, 40, 0.90);
     --edge_dim:         0.15;
     --graph_bg:         rgba(255, 252, 246, 0.82);
-    --graph_border:     rgba(0, 0, 0, 0.08);
     --graph_grid:       rgba(104, 84, 58, 0.06);
     --layer_rule:       #000000;
-    --shadow:           0 24px 70px rgba(67, 50, 20, 0.12);
-    --shadow_soft:      0 8px 32px rgba(67, 50, 20, 0.08);
-    --hover_shadow:     rgba(60, 40, 20, 0.14);
     --card_start:       rgba(255, 251, 245, 0.98);
     --card_end:         rgba(250, 242, 231, 0.96);
     --card_border:      rgba(0, 0, 0, 0.12);
@@ -146,13 +122,8 @@
     --label_border:     rgba(0, 0, 0, 0.12);
     --label_glow:       rgba(255, 252, 246, 0.92);
     --label_shadow:     0 8px 24px rgba(60, 40, 20, 0.08);
-    --btn_bg:           rgba(255, 251, 245, 0.98);
-    --btn_glow:         rgba(255, 252, 246, 0.92);
-    --btn_shadow:       0 8px 18px rgba(60, 40, 20, 0.08);
-    --btn_arrow:        rgba(42, 36, 29, 0.78);
     --notice_bg:        rgba(185, 32, 32, 0.06);
     --notice_border:    rgba(185, 32, 32, 0.18);
-    --tag_bg:           rgba(0, 0, 0, 0.05);
     --token_bg:         rgba(0, 0, 0, 0.05);
     --token_border:     rgba(0, 0, 0, 0.08);
     --legend_abstract_bg:     rgba(238, 248, 241, 0.94);
@@ -167,7 +138,6 @@
     --tooltip_text:     #f4ece1;
     --tooltip_title:    rgba(255, 223, 197, 0.9);
     --tooltip_cycle:    #ffb5b5;
-    --topbar_bg:        rgba(244, 240, 232, 0.85);
     --scrollbar_thumb:  rgba(0, 0, 0, 0.12);
     --selection_bg:     rgba(143, 74, 45, 0.20);
     --grain_opacity:    0.02;
@@ -736,12 +706,6 @@ button, input, select, textarea { font: inherit; }
 }
 
 /* ── fullscreen ─────────────────────────────────────────────── */
-.fullscreen_toggle.is_active {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: var(--accent_soft);
-}
-
 .graph_panel:fullscreen {
     display: flex;
     flex-direction: column;

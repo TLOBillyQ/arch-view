@@ -5,17 +5,26 @@ local fs = require("arch_view.runtime.fs")
 
 local cli = {}
 
+local _flag_fields = {
+  ["--project-root"] = "project_root",
+  ["--config"] = "config_path",
+  ["--out"] = "out_path",
+  ["--out-dir"] = "out_dir",
+  ["--in-json"] = "in_json",
+}
+
 local function _text(zh, en)
   return common.bilingual(zh, en)
 end
 
 local function _usage(command_name)
   local name = tostring(command_name or "tools/quality/arch.lua")
+  local prefix = "  lua " .. name
   io.write(_text("用法", "Usage") .. ":\n")
-  io.write("  lua " .. name .. " scan --out <file> [--project-root <dir>] [--config <file>]\n")
-  io.write("  lua " .. name .. " check [--project-root <dir>] [--config <file>]\n")
-  io.write("  lua " .. name .. " viewer [--out-dir <dir>] [--project-root <dir>] [--config <file>] [--in-json <file>] [--open]\n")
-  io.write("  lua " .. name .. "\n")
+  io.write(prefix .. " scan --out <file> [--project-root <dir>] [--config <file>]\n")
+  io.write(prefix .. " check [--project-root <dir>] [--config <file>]\n")
+  io.write(prefix .. " viewer [--out-dir <dir>] [--project-root <dir>] [--config <file>] [--in-json <file>] [--open]\n")
+  io.write(prefix .. "\n")
 end
 
 local function _parse_args(args)
@@ -31,20 +40,9 @@ local function _parse_args(args)
   local index = 2
   while index <= #args do
     local token = args[index]
-    if token == "--project-root" then
-      options.project_root = args[index + 1]
-      index = index + 2
-    elseif token == "--config" then
-      options.config_path = args[index + 1]
-      index = index + 2
-    elseif token == "--out" then
-      options.out_path = args[index + 1]
-      index = index + 2
-    elseif token == "--out-dir" then
-      options.out_dir = args[index + 1]
-      index = index + 2
-    elseif token == "--in-json" then
-      options.in_json = args[index + 1]
+    local field = _flag_fields[token]
+    if field ~= nil then
+      options[field] = args[index + 1]
       index = index + 2
     elseif token == "--open" then
       options.open = true
@@ -84,11 +82,16 @@ local function _normalize_options(parsed, opts)
   }
 end
 
-local function _run_check(options)
-  local result, err = service.check(options)
+local function _call_service(service_fn, options)
+  local result, err = service_fn(options)
   if result == nil then
-    error(err)
+    error(err, 2)
   end
+  return result
+end
+
+local function _run_check(options)
+  local result = _call_service(service.check, options)
   local check = result.check or {}
   if check.ok then
     print(_text("arch_view 检查通过", "arch_view check ok"))
@@ -129,10 +132,7 @@ function cli.run(args, opts)
   local options = _normalize_options(parsed, opts)
 
   if command == "scan" then
-    local result, err = service.write_scan(options)
-    if result == nil then
-      error(err)
-    end
+    local result = _call_service(service.write_scan, options)
     print(_text("arch_view 扫描完成: ", "arch_view scan ok: ") .. result.out_path)
     return true
   end
@@ -140,10 +140,7 @@ function cli.run(args, opts)
     return _run_check(options)
   end
   if command == "viewer" then
-    local result, err = service.export_viewer(options)
-    if result == nil then
-      error(err)
-    end
+    local result = _call_service(service.export_viewer, options)
     print(_text("arch_view 视图已生成: ", "arch_view viewer ok: ") .. result.out_dir)
     return true
   end

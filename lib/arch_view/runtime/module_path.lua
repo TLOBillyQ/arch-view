@@ -3,7 +3,7 @@ local fs = require("arch_view.runtime.fs")
 local module_path = {}
 
 local function _source_path(stack_level)
-  local info = debug.getinfo(stack_level or 1, "S")
+  local info = debug.getinfo(stack_level, "S")
   local source = info and info.source or ""
   if source:sub(1, 1) == "@" then
     source = source:sub(2)

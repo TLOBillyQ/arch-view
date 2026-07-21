@@ -3,10 +3,6 @@ local common = require("arch_view.runtime.common")
 
 local cli = {}
 
-local function _copy_args(args)
-  return common.copy_array(args or {})
-end
-
 function cli.run(args, env)
   env = env or {}
 
@@ -22,7 +18,7 @@ function cli.run(args, env)
     opts.asset_root = common.join_path(env.script_dir, "viewer")
   end
 
-  return cli_runner.run(_copy_args(args), opts)
+  return cli_runner.run(common.copy_array(args), opts)
 end
 
 return cli

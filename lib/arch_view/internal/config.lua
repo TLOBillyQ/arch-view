@@ -8,7 +8,7 @@ local function _text(zh, en)
     return common.bilingual(zh, en)
 end
 
-local function _assert_array_of_strings(field_name, values)
+local function _validate_array(field_name, values, item_is_valid, item_error)
     if values == nil then
         return true
     end
@@ -16,26 +16,23 @@ local function _assert_array_of_strings(field_name, values)
         return nil, field_name .. " must be an array"
     end
     for index, value in ipairs(values) do
-        if type(value) ~= "string" or value == "" then
-            return nil, field_name .. "[" .. tostring(index) .. "] must be a non-empty string"
+        if not item_is_valid(value) then
+            return nil, field_name .. "[" .. tostring(index) .. "] " .. item_error
         end
     end
     return true
 end
 
+local function _assert_array_of_strings(field_name, values)
+    return _validate_array(field_name, values, function(value)
+        return type(value) == "string" and value ~= ""
+    end, "must be a non-empty string")
+end
+
 local function _validate_rule_list(field_name, rules)
-    if rules == nil then
-        return true
-    end
-    if type(rules) ~= "table" then
-        return nil, field_name .. " must be an array"
-    end
-    for index, rule in ipairs(rules) do
-        if type(rule) ~= "table" then
-            return nil, field_name .. "[" .. tostring(index) .. "] must be a table"
-        end
-    end
-    return true
+    return _validate_array(field_name, rules, function(value)
+        return type(value) == "table"
+    end, "must be a table")
 end
 
 local function _validate_config_shape(loaded)
@@ -51,19 +48,11 @@ local function _validate_config_shape(loaded)
         return nil, err
     end
 
-    ok, err = _validate_rule_list("component_rules", loaded.component_rules)
-    if not ok then
-        return nil, err
-    end
-
-    ok, err = _validate_rule_list("abstract_rules", loaded.abstract_rules)
-    if not ok then
-        return nil, err
-    end
-
-    ok, err = _validate_rule_list("forbidden_dependency_rules", loaded.forbidden_dependency_rules)
-    if not ok then
-        return nil, err
+    for _, field_name in ipairs({ "component_rules", "abstract_rules", "forbidden_dependency_rules" }) do
+        ok, err = _validate_rule_list(field_name, loaded[field_name])
+        if not ok then
+            return nil, err
+        end
     end
 
     return true
@@ -97,7 +86,9 @@ end
 
 function config.resolve(opts)
     opts = opts or {}
-    local project_root = fs.resolve_path(fs.current_dir(), opts.project_root or fs.current_dir())
+    local cwd = fs.current_dir()
+    local project_root = fs.resolve_path(cwd, opts.project_root or cwd)
+    local resolved_config_path = opts.config_path and fs.resolve_path(cwd, opts.config_path) or nil
 
     if opts.config ~= nil then
         local ok, err = _validate_config_shape(opts.config)
@@ -107,12 +98,11 @@ function config.resolve(opts)
         return {
             project_root = project_root,
             config = opts.config,
-            config_path = opts.config_path and fs.resolve_path(fs.current_dir(), opts.config_path) or nil,
+            config_path = resolved_config_path,
         }
     end
 
-    local config_path = opts.config_path and fs.resolve_path(fs.current_dir(), opts.config_path)
-        or config.default_path(project_root)
+    local config_path = resolved_config_path or config.default_path(project_root)
 
     if not fs.path_exists(config_path) then
         return nil, _text(

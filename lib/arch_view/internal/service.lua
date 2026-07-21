@@ -12,7 +12,8 @@ local function _text(zh, en)
 end
 
 local function _resolved_project_root(opts)
-  return fs.resolve_path(fs.current_dir(), opts and opts.project_root or fs.current_dir())
+  local cwd = fs.current_dir()
+  return fs.resolve_path(cwd, opts and opts.project_root or cwd)
 end
 
 local function _resolve_project_path(project_root, path)
@@ -32,12 +33,11 @@ local function _resolve_context(opts)
   return resolved
 end
 
-local function _write_file(path, content)
-  local ok, err = fs.write_file(path, content)
-  if not ok then
-    return nil, err
+local function _ensure_architecture(opts)
+  if opts.architecture ~= nil then
+    return opts.architecture
   end
-  return true
+  return service.analyze(opts)
 end
 
 local function _read_architecture_json_text(path)
@@ -45,7 +45,7 @@ local function _read_architecture_json_text(path)
   if content == nil then
     return nil, err
   end
-  return tostring(content):match("^%s*(.-)%s*$")
+  return content:match("^%s*(.-)%s*$")
 end
 
 local function _export_viewer_payload(architecture_json_text, architecture, project_root, out_dir, asset_root, opts)
@@ -59,12 +59,12 @@ local function _export_viewer_payload(architecture_json_text, architecture, proj
     return nil, copy_err
   end
 
-  local write_ok, write_err = _write_file(fs.join_path(out_dir, "architecture.json"), architecture_json_text)
+  local write_ok, write_err = fs.write_file(fs.join_path(out_dir, "architecture.json"), architecture_json_text)
   if not write_ok then
     return nil, write_err
   end
 
-  write_ok, write_err = _write_file(
+  write_ok, write_err = fs.write_file(
     fs.join_path(out_dir, "architecture_data.js"),
     "window.ARCH_VIEW_DATA = " .. architecture_json_text .. ";\n"
   )
@@ -103,7 +103,6 @@ function service.analyze(opts)
 end
 
 function service.check(opts)
-  opts = opts or {}
   local architecture, err = service.analyze(opts)
   if architecture == nil then
     return nil, err
@@ -126,20 +125,12 @@ function service.write_scan(opts)
     )
   end
 
-  local architecture = opts.architecture
+  local architecture, err = _ensure_architecture(opts)
   if architecture == nil then
-    local err
-    architecture, err = service.analyze(opts)
-    if architecture == nil then
-      return nil, err
-    end
+    return nil, err
   end
 
-  local ok, parent_err = fs.ensure_parent_dir(out_path)
-  if not ok then
-    return nil, parent_err
-  end
-  local write_ok, write_err = _write_file(out_path, json_writer.encode(architecture))
+  local write_ok, write_err = fs.write_file(out_path, json_writer.encode(architecture))
   if not write_ok then
     return nil, write_err
   end
@@ -172,7 +163,7 @@ function service.export_viewer(opts)
     end
   else
     local err
-    architecture, err = service.analyze(opts)
+    architecture, err = _ensure_architecture(opts)
     if architecture == nil then
       return nil, err
     end
