@@ -18,17 +18,60 @@ self-contained viewer bundle.
 
 ## CLI
 
-In Monopoly, the public CLI is the repository wrapper:
+The library ships Lua modules only — no standalone `bin/` entrypoint. The
+public CLI facade is `require("arch_view.cli").run(args, env)`; any host can
+invoke it directly:
 
 ```sh
-lua tools/quality/arch.lua scan --out <file> [--project-root <dir>] [--config <file>]
-lua tools/quality/arch.lua check [--project-root <dir>] [--config <file>]
-lua tools/quality/arch.lua viewer [--out-dir <dir>] [--project-root <dir>] [--config <file>] [--in-json <file>] [--open]
-lua tools/quality/arch.lua
+lua -e 'package.path = "lib/?.lua;lib/?/init.lua;" .. package.path
+        os.exit(require("arch_view.cli").run(arg, {
+          command_name = "arch_view",
+          default_config_path = "arch_view.config.json",
+          script_dir = ".",
+        }) and 0 or 1)' \
+  scan --out <file> [--project-root <dir>] [--config <file>]
 ```
 
-The vendor package exposes Lua modules only. It does not ship a standalone
-`bin/` entrypoint.
+Commands: `scan`, `check`, `viewer` (see `--help`-less usage by running with
+no command). Recognized `env` keys:
+
+- `cwd`: working directory used to resolve relative paths (default: process cwd)
+- `command_name`: display name in usage text
+- `default_project_root`: project root when `--project-root` is absent
+- `default_config_path`: config path when `--config` is absent
+- `script_dir`: directory containing `viewer/` assets (sets the viewer asset root)
+- `open_path`: function used to open the generated viewer (default: OS opener)
+
+Hosts typically wrap this in a small script; see the next section.
+
+## Using arch_view in a new project (eggy example)
+
+1. Vendor the library, e.g. as a git submodule or a plain copy at
+   `eggy/vendor/arch_view` (keep `lib/` and `viewer/`).
+2. Write `eggy/arch_view.config.json` with your `source_roots`,
+   `component_rules`, `abstract_rules`, and `forbidden_dependency_rules`
+   (schema shown in the Config section below).
+3. Add a minimal wrapper, e.g. `eggy/tools/arch.lua`:
+
+   ```lua
+   package.path = "vendor/arch_view/lib/?.lua;vendor/arch_view/lib/?/init.lua;"
+     .. package.path
+   local cli = require("arch_view.cli")
+   local ok = cli.run(arg or {}, {
+     command_name = "tools/arch.lua",
+     default_config_path = "arch_view.config.json",
+     script_dir = "vendor/arch_view",
+   })
+   os.exit(ok and 0 or 1)
+   ```
+
+4. Run it from the project root:
+
+   ```sh
+   lua tools/arch.lua check                                  # forbidden-dependency check
+   lua tools/arch.lua scan --out .arch_view/architecture.json
+   lua tools/arch.lua viewer --out-dir .arch_view/viewer --open
+   ```
 
 ## Public API
 

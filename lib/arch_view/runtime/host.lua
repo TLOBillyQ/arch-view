@@ -668,7 +668,7 @@ function common.build_open_command(path)
 end
 
 function common.make_temp_path(prefix, suffix)
-  local base_dir = common.join_path(common.system_tmp_dir(), "monopoly_script_tools")
+  local base_dir = common.join_path(common.system_tmp_dir(), "arch_view")
   common.ensure_dir(base_dir)
   local name = table.concat({
     tostring(prefix or "tmp"),

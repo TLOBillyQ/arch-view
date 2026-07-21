@@ -18,7 +18,7 @@ local function _text(zh, en)
 end
 
 local function _usage(command_name)
-  local name = tostring(command_name or "tools/quality/arch.lua")
+  local name = tostring(command_name or "arch_view")
   local prefix = "  lua " .. name
   io.write(_text("用法", "Usage") .. ":\n")
   io.write(prefix .. " scan --out <file> [--project-root <dir>] [--config <file>]\n")
