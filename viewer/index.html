@@ -9,92 +9,12 @@
   <script defer src="./script.js"></script>
 </head>
 <body>
-  <div class="grain" aria-hidden="true"></div>
-  <div class="page_shell">
-
-    <header class="toolbar anim_stagger" style="--i:0">
-      <div class="toolbar_brand">
-        <span class="toolbar_mark">ARCH</span>
-        <span class="toolbar_sep">/</span>
-        <span class="toolbar_title">Arch View</span>
-      </div>
-
-      <nav id="breadcrumb" class="breadcrumb"></nav>
-
-      <div class="toolbar_stats">
-        <span class="stat"><span class="stat_label">View</span> <strong id="current_view_label">root</strong></span>
-        <span class="stat"><span class="stat_label">N</span> <strong id="node_count_label">0</strong></span>
-        <span class="stat"><span class="stat_label">E</span> <strong id="edge_count_label">0</strong></span>
-        <span class="stat"><span class="stat_label">C</span> <strong id="cycle_count_label">0</strong></span>
-      </div>
-
-      <div class="toolbar_controls">
-        <div class="legend">
-          <span class="legend_chip legend_default">Concrete</span>
-          <span class="legend_chip legend_abstract">Abstract</span>
-          <span class="legend_chip legend_cycle">Cycle</span>
-        </div>
-        <button id="theme_toggle" class="theme_toggle" aria-label="Toggle theme">
-          <span class="theme_toggle_icon" aria-hidden="true"></span>
-        </button>
-        <button id="flow_toggle" class="ghost_button flow_toggle" type="button">Flow</button>
-        <button id="cycle_toggle" class="ghost_button cycle_toggle" type="button">Cycles</button>
-        <button id="fullscreen_toggle" class="ghost_button fullscreen_toggle" type="button">Full</button>
-        <button id="back_button" class="ghost_button" type="button">Back</button>
-      </div>
-    </header>
-
-    <main class="main_stage anim_stagger" style="--i:1">
-      <section class="graph_panel">
-        <div id="graph_notice" class="graph_notice" hidden></div>
-        <div id="graph_scroller" class="graph_scroller">
-          <div id="zoom_controls" class="zoom_controls">
-            <button id="zoom_out" class="zoom_btn" type="button" aria-label="Zoom out">&minus;</button>
-            <span id="zoom_level" class="zoom_level">100%</span>
-            <button id="zoom_in" class="zoom_btn" type="button" aria-label="Zoom in">+</button>
-            <button id="zoom_reset" class="zoom_btn zoom_btn_wide" type="button" aria-label="Reset zoom">Reset</button>
-          </div>
-          <div id="graph_surface" class="graph_surface">
-            <svg id="graph_svg" class="graph_svg" aria-hidden="true"></svg>
-            <div id="layer_labels" class="layer_labels"></div>
-            <div id="node_layer" class="node_layer"></div>
-            <div id="tooltip" class="tooltip" hidden></div>
-          </div>
-        </div>
-      </section>
-
-      <aside class="detail_panel">
-        <div class="detail_header">
-          <p class="eyebrow">Inspector</p>
-          <h2 id="detail_title">Select a leaf module</h2>
-          <p id="detail_subtitle" class="detail_subtitle">Click a non-leaf node to drill down. Click a leaf node to inspect.</p>
-        </div>
-
-        <section class="detail_section">
-          <h3>Metadata</h3>
-          <dl id="metadata_list" class="metadata_list"></dl>
-        </section>
-
-        <section class="detail_section">
-          <h3>Internal Deps</h3>
-          <ul id="internal_dependency_list" class="token_list empty_state"></ul>
-        </section>
-
-        <section class="detail_section">
-          <h3>External Deps</h3>
-          <ul id="external_dependency_list" class="token_list empty_state"></ul>
-        </section>
-
-        <section class="detail_section detail_section_source">
-          <div class="source_heading">
-            <h3>Source</h3>
-            <span id="source_path_label" class="source_path_label"></span>
-          </div>
-          <pre id="source_code" class="source_code empty_state">No module selected.</pre>
-        </section>
-      </aside>
-    </main>
-
+  <div id="toolbar">
+    <button id="back-btn" type="button" disabled>Back</button>
+    <nav id="breadcrumb" aria-label="view path"></nav>
+  </div>
+  <div id="scene-scroll">
+    <svg id="scene" xmlns="http://www.w3.org/2000/svg"></svg>
   </div>
 </body>
 </html>

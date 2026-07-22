@@ -1,4 +1,5 @@
 local fs = require("arch_view.runtime.fs")
+local layout = require("arch_view.internal.layout")
 
 local analyzer = {}
 
@@ -366,8 +367,6 @@ local function _build_view_nodes(prefix, modules, dependencies)
       drillable = drillable,
       cycle = false,
       has_cycle_subtree = false,
-      layer = #prefix,
-      rect = { x = 80 + (#nodes % 4) * 220, y = 80 + math.floor(#nodes / 4) * 120, width = 188, height = 60 },
       incoming_dependencies = incoming,
       outgoing_dependencies = outgoing,
     }
@@ -445,6 +444,29 @@ local function _collect_view_prefixes(modules)
   return prefixes
 end
 
+-- Run the layout engine over one view: node layer/rect come from the
+-- topological layering, and edges removed as feedback edges get
+-- cycle_break = true.
+local function _apply_view_layout(nodes, display_edges)
+  local node_ids = {}
+  for _, node in ipairs(nodes) do
+    node_ids[#node_ids + 1] = node.id
+  end
+  local edges = {}
+  for _, edge in ipairs(display_edges) do
+    edges[#edges + 1] = { from = edge.from, to = edge.to }
+  end
+  local view_layout = layout.compute_view(node_ids, edges)
+  for _, node in ipairs(nodes) do
+    local entry = view_layout.nodes[node.id]
+    node.layer = entry.row
+    node.rect = entry.rect
+  end
+  for _, edge in ipairs(display_edges) do
+    edge.cycle_break = view_layout.feedback[layout.edge_key(edge.from, edge.to)] == true
+  end
+end
+
 local function _build_views(modules, graph, dependencies)
   local views = {}
   local prefixes = _collect_view_prefixes(modules)
@@ -453,6 +475,7 @@ local function _build_views(modules, graph, dependencies)
     local nodes, buckets = _build_view_nodes(prefix, modules, dependencies)
     if #nodes > 0 then
       local display_edges = _build_view_edges(prefix, buckets, graph, modules)
+      _apply_view_layout(nodes, display_edges)
       views[view_key] = {
         key = view_key,
         nodes = nodes,

@@ -1,13 +1,11 @@
 local arch_view = require("arch_view")
 local common = require("arch_view.runtime.common")
 
+local helpers = dofile("tests/helpers.lua")
+
 local tmp_root = common.join_path(common.system_tmp_dir(), "arch_view_test_api")
 
-local function _assert_eq(actual, expected, message)
-    if actual ~= expected then
-        error((message or "values differ") .. "\nexpected: " .. tostring(expected) .. "\nactual: " .. tostring(actual))
-    end
-end
+local _assert_eq = helpers.assert_eq
 
 local function _assert_contains(list, expected, message)
     for _, value in ipairs(list or {}) do
