@@ -34,7 +34,8 @@ var COLORS = {
   tooltipCycle: 'rgb(180,0,0)',
   backEnabled: 'rgb(225,225,225)',
   backDisabled: 'rgb(205,205,205)',
-  backTextDisabled: 'rgb(120,120,120)'
+  backTextDisabled: 'rgb(120,120,120)',
+  searchHighlight: 'rgb(255,140,0)'  // orange dashed frame for the search target (#230)
 };
 
 var SCENE_MIN_WIDTH = 1200;      // layout engine canvas width (rect coordinates are based on it)
@@ -203,6 +204,49 @@ function clampPopup(x, y, w, h, viewportWidth, viewportHeight) {
   return [Math.max(margin, Math.min(x, maxX)), Math.max(margin, Math.min(y, maxY))];
 }
 
+/* ================= Cross-view search (new feature, not in the original) ================= */
+
+var SEARCH_RESULT_LIMIT = 30;
+
+// searchNodes: case-insensitive substring match against every node's
+// display_label / label / full_name / id across all views; results are
+// ordered by view key and capped at SEARCH_RESULT_LIMIT.
+function searchNodes(views, query) {
+  query = (query || '').trim().toLowerCase();
+  if (!query) return [];
+  var results = [];
+  Object.keys(views).sort().forEach(function (viewKey) {
+    var nodes = (views[viewKey] && views[viewKey].nodes) || [];
+    nodes.forEach(function (n) {
+      var hay = [n.display_label, n.label, n.full_name, n.id]
+        .filter(Boolean).join(' ').toLowerCase();
+      if (hay.indexOf(query) >= 0) {
+        results.push({
+          viewKey: viewKey,
+          nodeId: n.id,
+          label: n.display_label || n.label || n.id,
+          fullName: n.full_name || n.id
+        });
+      }
+    });
+  });
+  return results.slice(0, SEARCH_RESULT_LIMIT);
+}
+
+// navPathTo: rebuild the root->target nav path from progressive key prefixes,
+// keeping only prefixes that are real views. The result is equivalent to
+// drilling down level by level, so Back walks back to root step by step.
+function navPathTo(views, viewKey) {
+  if (viewKey === 'root') return ['root'];
+  var parts = viewKey.split('.');
+  var path = ['root'];
+  for (var i = 1; i <= parts.length; i++) {
+    var key = parts.slice(0, i).join('.');
+    if (views[key]) path.push(key);
+  }
+  return path;
+}
+
 /* ================= Exports (for node verification) ================= */
 
 var ArchView = {
@@ -219,7 +263,10 @@ var ArchView = {
   splitLabelLines: splitLabelLines,
   maxLabelChars: maxLabelChars,
   buildSceneModel: buildSceneModel,
-  clampPopup: clampPopup
+  clampPopup: clampPopup,
+  SEARCH_RESULT_LIMIT: SEARCH_RESULT_LIMIT,
+  searchNodes: searchNodes,
+  navPathTo: navPathTo
 };
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -239,7 +286,8 @@ var state = {
   zoom: 1.0,            // CSS transform scale of the scene (no zoom-stack, #229)
   sceneWidth: 0,        // last rendered scene size, drives the stage box
   sceneHeight: 0,
-  lastWidth: 0          // last viewport width; resize rebuilds on width change only
+  lastWidth: 0,         // last viewport width; resize rebuilds on width change only
+  highlight: null       // {viewKey, nodeId} set by search locate, cleared on navigation
 };
 
 var els = {};
@@ -280,7 +328,7 @@ function renderView() {
   if (!view) return;
   hidePopups();
   renderToolbar();
-  renderScene(buildSceneModel(view, canvasWidthFor()));
+  renderScene(viewKey, buildSceneModel(view, canvasWidthFor()));
 }
 
 function renderToolbar() {
@@ -312,6 +360,7 @@ function renderToolbar() {
       item.addEventListener('click', function (ev) {
         ev.preventDefault();
         state.navStack = state.navStack.slice(0, i + 1);
+        state.highlight = null;
         renderView();
         els.sceneScroll.scrollTop = 0;
       });
@@ -320,7 +369,7 @@ function renderToolbar() {
   });
 }
 
-function renderScene(scene) {
+function renderScene(viewKey, scene) {
   var svg = els.svg;
   svg.innerHTML = '';
   state.sceneWidth = scene.width;
@@ -336,6 +385,17 @@ function renderScene(scene) {
       g.setAttribute('class', 'node-drillable');
     } else if (r.leaf && r.hasSource) {
       g.setAttribute('class', 'node-source');
+    }
+
+    // Search locate highlight (new feature, not in the original): orange
+    // dashed frame drawn 4px outside the node rect.
+    if (state.highlight && state.highlight.viewKey === viewKey &&
+        state.highlight.nodeId === r.id) {
+      g.appendChild(svgEl('rect', {
+        x: r.x - 4, y: r.y - 4, width: r.width + 8, height: r.height + 8,
+        fill: 'none', stroke: COLORS.searchHighlight, 'stroke-width': 3,
+        'stroke-dasharray': '6,3'
+      }));
     }
 
     // Rect: leaf stroke black 3px, non-leaf (120,140,160) 1px
@@ -383,6 +443,7 @@ function renderScene(scene) {
     if (target) {
       g.addEventListener('click', function () {
         state.navStack.push(target);
+        state.highlight = null;
         renderView();
         els.sceneScroll.scrollTop = 0;
       });
@@ -450,6 +511,18 @@ function renderScene(scene) {
     });
   }
   applyZoom();
+
+  // Search locate: scroll the highlighted node into the visible area.
+  if (state.highlight && state.highlight.viewKey === viewKey) {
+    var located = null;
+    scene.rects.forEach(function (r) { if (r.id === state.highlight.nodeId) located = r; });
+    if (located) {
+      setTimeout(function () {
+        var viewportHeight = els.sceneScroll.clientHeight || 0;
+        els.sceneScroll.scrollTop = Math.max(0, located.y - viewportHeight / 2);
+      }, 0);
+    }
+  }
 }
 
 /* ---------- popup / tooltip ---------- */
@@ -531,6 +604,31 @@ function zoomBy(factor) {
   applyZoom();
 }
 
+/* ---------- Search dropdown (new feature, not in the original) ---------- */
+
+function renderSearchResults(results) {
+  var dd = els.searchDropdown;
+  dd.innerHTML = '';
+  if (results.length === 0) { dd.style.display = 'none'; return; }
+  results.forEach(function (r) {
+    var item = document.createElement('div');
+    item.className = 'search-item';
+    item.textContent = r.label + '  —  ' + r.viewKey;
+    // mousedown (not click) so the selection lands before the input's blur
+    // hides the dropdown.
+    item.addEventListener('mousedown', function (ev) {
+      ev.preventDefault();
+      state.navStack = navPathTo(VIEWS, r.viewKey);
+      state.highlight = { viewKey: r.viewKey, nodeId: r.nodeId };
+      dd.style.display = 'none';
+      els.searchInput.blur();
+      renderView();
+    });
+    dd.appendChild(item);
+  });
+  dd.style.display = 'block';
+}
+
 /* ---------- Startup ---------- */
 
 function init() {
@@ -544,10 +642,13 @@ function init() {
   els.modal = document.getElementById('source-modal');
   els.modalTitle = document.getElementById('source-modal-title');
   els.modalBody = document.getElementById('source-modal-body');
+  els.searchInput = document.getElementById('search-input');
+  els.searchDropdown = document.getElementById('search-dropdown');
 
   els.backBtn.addEventListener('click', function () {
     if (state.navStack.length > 1) {
       state.navStack.pop();
+      state.highlight = null;
       renderView();
       els.sceneScroll.scrollTop = 0;
     }
@@ -590,6 +691,16 @@ function init() {
         renderView();
       }
     }, 150);
+  });
+
+  els.searchInput.addEventListener('input', function () {
+    renderSearchResults(searchNodes(VIEWS, els.searchInput.value));
+  });
+  els.searchInput.addEventListener('blur', function () {
+    setTimeout(function () { els.searchDropdown.style.display = 'none'; }, 150);
+  });
+  els.searchInput.addEventListener('focus', function () {
+    renderSearchResults(searchNodes(VIEWS, els.searchInput.value));
   });
 
   renderView();

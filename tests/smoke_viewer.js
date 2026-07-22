@@ -78,6 +78,7 @@ const ids = {};
   'source-modal', 'source-modal-title', 'source-modal-body',
   'zoom-in', 'zoom-out', 'source-modal-close',
   'dep-popup', 'name-tooltip',
+  'search-input', 'search-dropdown',
 ].forEach((id) => { ids[id] = makeEl(id); });
 ids['scene-scroll'].clientWidth = 1200;
 

@@ -131,6 +131,7 @@ lua tests/compare.lua   # regression check (exit 0 = outputs match golden)
 lua tests/bench.lua 50  # analyze benchmark (CPU ms per iteration)
 tests/check_syntax.sh   # luac -p on lib/ + tests/, node --check viewer/script.js
 node tests/smoke_viewer.js  # viewer interaction smoke on a minimal DOM stub
+node tests/viewer_search_smoke.js  # viewer search interaction smoke (minimal DOM stub)
 ```
 
 Unit tests live in `tests/test_*.lua`; each file returns a table of `test_*`
