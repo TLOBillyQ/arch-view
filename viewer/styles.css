@@ -43,6 +43,22 @@ html, body {
   overflow: hidden;
 }
 
+#toolbar-spacer {
+  flex: 1;
+}
+
+/* Zoom buttons: same gray as the enabled Back button */
+.zoom-btn {
+  width: 26px;
+  height: 26px;
+  font-size: 14px;
+  line-height: 1;
+  border: 1px solid rgb(170, 175, 182);
+  background: rgb(225, 225, 225);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
 #breadcrumb a {
   color: rgb(40, 80, 160);
 }
@@ -72,6 +88,11 @@ html, body {
 #scene {
   display: block;
   background: rgb(250, 250, 250);
+}
+
+/* Zoom wrapper: sized to svg * zoom so native scrollbars track the zoomed scene */
+#stage {
+  position: relative;
 }
 
 .node-label {
@@ -104,4 +125,64 @@ html, body {
   white-space: nowrap;
   line-height: 20px;
   padding: 0 6px;
+}
+
+/* Leaf node with viewable source */
+.node-source .node-label {
+  cursor: pointer;
+}
+
+/* Source modal (deliberate deviation: in-page modal instead of the original
+ * Swing window; monospace 13px, no syntax highlighting) */
+#source-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.35);
+  align-items: center;
+  justify-content: center;
+}
+
+#source-modal-inner {
+  width: 980px;
+  max-width: 92vw;
+  height: 760px;
+  max-height: 88vh;
+  background: white;
+  border: 1px solid rgb(80, 80, 80);
+  display: flex;
+  flex-direction: column;
+}
+
+#source-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: rgb(238, 242, 246);
+  border-bottom: 1px solid rgb(210, 214, 220);
+}
+
+#source-modal-title {
+  font-family: monospace;
+  font-size: 13px;
+  flex: 1;
+}
+
+#source-modal-close {
+  cursor: pointer;
+  border: 1px solid rgb(170, 175, 182);
+  background: rgb(225, 225, 225);
+}
+
+#source-modal-body {
+  flex: 1;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  font-family: Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  white-space: pre;
+  line-height: 1.35;
 }

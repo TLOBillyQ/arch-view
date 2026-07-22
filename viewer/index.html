@@ -12,9 +12,23 @@
   <div id="toolbar">
     <button id="back-btn" type="button" disabled>Back</button>
     <nav id="breadcrumb" aria-label="view path"></nav>
+    <span id="toolbar-spacer"></span>
+    <button id="zoom-out" class="zoom-btn" type="button" title="Zoom out (-)">−</button>
+    <button id="zoom-in" class="zoom-btn" type="button" title="Zoom in (+)">+</button>
   </div>
   <div id="scene-scroll">
-    <svg id="scene" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div id="stage">
+      <svg id="scene" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </div>
+  <div id="source-modal">
+    <div id="source-modal-inner">
+      <div id="source-modal-header">
+        <span id="source-modal-title"></span>
+        <button id="source-modal-close" type="button">Close (Esc)</button>
+      </div>
+      <pre id="source-modal-body"></pre>
+    </div>
   </div>
   <div id="dep-popup"></div>
   <div id="name-tooltip"></div>
