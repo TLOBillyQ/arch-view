@@ -134,6 +134,69 @@ local function test_feedback_edges_include_self_loops()
     _assert_true(feedback[layout.edge_key("a", "a")], "self-loop should be a feedback edge")
 end
 
+-- BFS shortest path: neighbors are visited in lexicographic order, so the
+-- first goal hit is the lexicographically earliest among the shortest paths.
+local function test_shortest_path_bfs_lexicographic()
+    local edges = {
+        { from = "s", to = "b" },
+        { from = "s", to = "a" },
+        { from = "a", to = "t" },
+        { from = "b", to = "t" },
+        { from = "s", to = "t" },
+    }
+    local path = layout.shortest_path(edges, "s", "t")
+    _assert_eq(table.concat(path, ","), "s,t", "direct edge is the shortest path")
+    local detour = layout.shortest_path({
+        { from = "s", to = "b" },
+        { from = "s", to = "a" },
+        { from = "a", to = "t" },
+        { from = "b", to = "t" },
+    }, "s", "t")
+    _assert_eq(table.concat(detour, ","), "s,a,t", "lexicographically smallest neighbor first")
+    _assert_eq(layout.shortest_path(edges, "t", "s"), nil, "no path returns nil")
+end
+
+-- A self-loop feedback edge closes on itself: a->a.
+local function test_cycle_path_self_loop_closes_on_itself()
+    local path = layout.cycle_path_for_feedback_edge({}, { from = "a", to = "a" })
+    _assert_eq(table.concat(path, ","), "a,a")
+end
+
+-- cycle_paths: one closed a->...->a path per feedback edge, built from the
+-- BFS shortest to->from path on the acyclic remainder, prefixed with from.
+local function test_cycle_paths_closed_format()
+    local node_ids = { "a", "b", "c" }
+    local edges = {
+        { from = "a", to = "b" },
+        { from = "b", to = "c" },
+        { from = "c", to = "a" },
+    }
+    local assigned = layout.assign_layers(node_ids, edges)
+    -- greedy order is [c, a, b], so b->c is the only feedback edge; the
+    -- acyclic remainder routes c->a->b, closing the cycle as b->c->a->b.
+    _assert_eq(#assigned.cycles, 1, "one feedback edge yields one cycle path")
+    _assert_eq(table.concat(assigned.cycles[1], "->"), "b->c->a->b", "closed cycle format")
+end
+
+-- A DAG has no cycle paths at all.
+local function test_cycle_paths_empty_on_dag()
+    local assigned = layout.assign_layers({ "a", "b" }, {
+        { from = "a", to = "b" },
+    })
+    _assert_eq(#assigned.cycles, 0, "DAG yields no cycle paths")
+end
+
+-- compute_view exposes the cyclic node set: both ends of a two-node cycle.
+local function test_compute_view_marks_cyclic_nodes()
+    local view = layout.compute_view({ "a", "b", "c" }, {
+        { from = "a", to = "b" },
+        { from = "b", to = "a" },
+    })
+    _assert_true(view.cyclic_nodes["a"], "a sits in the cycle")
+    _assert_true(view.cyclic_nodes["b"], "b sits in the cycle")
+    _assert_true(not view.cyclic_nodes["c"], "c is outside the cycle")
+end
+
 -- Longest-path layering on a chain: the node nobody depends on sits at
 -- level 1, each dependent layer one deeper.
 local function test_topological_levels_chain()
@@ -291,6 +354,67 @@ local function test_analyzer_wires_layout_and_cycle_break()
             end
         end
         _assert_eq(break_count, 1, "exactly one edge should be marked cycle_break")
+
+        -- Cycle readability fields are really filled (no constant false).
+        _assert_true(node_by_id["a"].cycle, "a sits in the cycle component")
+        _assert_true(node_by_id["b"].cycle, "b sits in the cycle component")
+        _assert_eq(node_by_id["a"].has_cycle_subtree, false, "no subviews means no subtree cycle")
+        _assert_eq(#root_view.cycle_lines, 1, "root view lists its own cycle")
+        _assert_eq(root_view.cycle_lines[1], "a->b->a", "closed cycle line format")
+    end)
+end
+
+-- has_cycle_subtree rolls up from deeper views: a cycle inside src.sub makes
+-- the root-level node "sub" red even though the root view itself is acyclic.
+local function test_analyzer_fills_has_cycle_subtree()
+    local arch_view = require("arch_view")
+    local common = require("arch_view.runtime.common")
+
+    helpers.with_clean_tmp("arch_view_test_subtree_cycle", function(tmp_root)
+        local project_root = common.join_path(tmp_root, "subtree_project")
+        assert(common.ensure_dir(common.join_path(project_root, "src/sub")))
+        assert(common.write_file(common.join_path(project_root, "arch_view.config.json"), [[
+{
+  "source_roots": ["src"],
+  "component_rules": [
+    {"name": "core", "match": ["^src$", "^src%..+"], "component": "core"}
+  ]
+}
+]]))
+        assert(common.write_file(common.join_path(project_root, "src/top.lua"), 'local x = require("src.sub.x")\nreturn {}\n'))
+        assert(common.write_file(common.join_path(project_root, "src/sub/x.lua"), 'local y = require("src.sub.y")\nreturn {}\n'))
+        assert(common.write_file(common.join_path(project_root, "src/sub/y.lua"), 'local x = require("src.sub.x")\nreturn {}\n'))
+
+        local architecture, analyze_err = arch_view.analyze({ project_root = project_root })
+        if architecture == nil then
+            error(analyze_err)
+        end
+
+        local root_view = architecture.views["root"]
+        local sub_view = architecture.views["sub"]
+        _assert_true(root_view ~= nil and sub_view ~= nil, "root and sub views should exist")
+
+        local root_node_by_id = {}
+        for _, node in ipairs(root_view.nodes) do
+            root_node_by_id[node.id] = node
+        end
+        _assert_eq(root_node_by_id["sub"].cycle, false, "sub is not in a root-level cycle")
+        _assert_true(root_node_by_id["sub"].has_cycle_subtree, "sub subtree contains the x<->y cycle")
+        _assert_eq(root_node_by_id["top"].has_cycle_subtree, false, "top has no subtree cycle")
+
+        local sub_node_by_id = {}
+        for _, node in ipairs(sub_view.nodes) do
+            sub_node_by_id[node.id] = node
+        end
+        _assert_true(sub_node_by_id["x"].cycle, "x sits in the sub view cycle")
+        _assert_true(sub_node_by_id["y"].cycle, "y sits in the sub view cycle")
+
+        -- The root view aggregates descendant cycle lines (full names carry
+        -- the namespace prefix); the sub view lists only its own.
+        _assert_eq(#sub_view.cycle_lines, 1)
+        _assert_eq(sub_view.cycle_lines[1], "sub.x->sub.y->sub.x", "sub view cycle line")
+        _assert_eq(#root_view.cycle_lines, 1, "root view aggregates the descendant cycle")
+        _assert_eq(root_view.cycle_lines[1], "sub.x->sub.y->sub.x")
     end)
 end
 
@@ -304,6 +428,11 @@ return {
     test_greedy_order_tie_prefers_largest_name = test_greedy_order_tie_prefers_largest_name,
     test_feedback_edges_are_backward_in_linear_order = test_feedback_edges_are_backward_in_linear_order,
     test_feedback_edges_include_self_loops = test_feedback_edges_include_self_loops,
+    test_shortest_path_bfs_lexicographic = test_shortest_path_bfs_lexicographic,
+    test_cycle_path_self_loop_closes_on_itself = test_cycle_path_self_loop_closes_on_itself,
+    test_cycle_paths_closed_format = test_cycle_paths_closed_format,
+    test_cycle_paths_empty_on_dag = test_cycle_paths_empty_on_dag,
+    test_compute_view_marks_cyclic_nodes = test_compute_view_marks_cyclic_nodes,
     test_topological_levels_chain = test_topological_levels_chain,
     test_topological_levels_diamond = test_topological_levels_diamond,
     test_assign_layers_groups_sorted = test_assign_layers_groups_sorted,
@@ -313,4 +442,5 @@ return {
     test_compute_view_rect_formula = test_compute_view_rect_formula,
     test_compute_view_row_spacing = test_compute_view_row_spacing,
     test_analyzer_wires_layout_and_cycle_break = test_analyzer_wires_layout_and_cycle_break,
+    test_analyzer_fills_has_cycle_subtree = test_analyzer_fills_has_cycle_subtree,
 }

@@ -81,3 +81,27 @@ html, body {
 .node-drillable .node-label {
   cursor: crosshair;
 }
+
+/* hover popup / tooltip：淡黄底 (255,255,225)，边框 (80,80,80)；
+   pointer-events:none 保证不抢走触发 hover，滚动由脚本路由滚轮实现 */
+#dep-popup, #name-tooltip {
+  display: none;
+  position: fixed;
+  z-index: 50;
+  background: rgb(255, 255, 225);
+  border: 1px solid rgb(80, 80, 80);
+  font-family: monospace;
+  font-size: 12px;
+  color: black;
+  padding: 5px 8px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  pointer-events: none;
+}
+
+#name-tooltip {
+  overflow: hidden;
+  white-space: nowrap;
+  line-height: 20px;
+  padding: 0 6px;
+}

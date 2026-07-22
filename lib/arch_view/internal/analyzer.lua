@@ -445,8 +445,9 @@ local function _collect_view_prefixes(modules)
 end
 
 -- Run the layout engine over one view: node layer/rect come from the
--- topological layering, and edges removed as feedback edges get
--- cycle_break = true.
+-- topological layering, edges removed as feedback edges get
+-- cycle_break = true, and nodes inside a cyclic component get cycle = true.
+-- Returns the view's own closed cycle paths as "a->b->c->a" full-name lines.
 local function _apply_view_layout(nodes, display_edges)
   local node_ids = {}
   for _, node in ipairs(nodes) do
@@ -457,14 +458,40 @@ local function _apply_view_layout(nodes, display_edges)
     edges[#edges + 1] = { from = edge.from, to = edge.to }
   end
   local view_layout = layout.compute_view(node_ids, edges)
+  local full_name_by_id = {}
   for _, node in ipairs(nodes) do
     local entry = view_layout.nodes[node.id]
     node.layer = entry.row
     node.rect = entry.rect
+    node.cycle = view_layout.cyclic_nodes[node.id] == true
+    full_name_by_id[node.id] = node.full_name
   end
   for _, edge in ipairs(display_edges) do
     edge.cycle_break = view_layout.feedback[layout.edge_key(edge.from, edge.to)] == true
   end
+  local cycle_lines = {}
+  for _, path in ipairs(view_layout.cycles) do
+    local parts = {}
+    for _, node_id in ipairs(path) do
+      parts[#parts + 1] = full_name_by_id[node_id] or node_id
+    end
+    cycle_lines[#cycle_lines + 1] = table.concat(parts, "->")
+  end
+  return cycle_lines
+end
+
+-- A node's subtree (its own subview plus every deeper view) contains a cycle.
+local function _subtree_has_cycle(full_name, views_with_cycles, view_keys)
+  if views_with_cycles[full_name] then
+    return true
+  end
+  local prefix = full_name .. "."
+  for _, view_key in ipairs(view_keys) do
+    if views_with_cycles[view_key] and view_key:sub(1, #prefix) == prefix then
+      return true
+    end
+  end
+  return false
 end
 
 local function _build_views(modules, graph, dependencies)
@@ -475,12 +502,13 @@ local function _build_views(modules, graph, dependencies)
     local nodes, buckets = _build_view_nodes(prefix, modules, dependencies)
     if #nodes > 0 then
       local display_edges = _build_view_edges(prefix, buckets, graph, modules)
-      _apply_view_layout(nodes, display_edges)
+      local own_cycle_lines = _apply_view_layout(nodes, display_edges)
       views[view_key] = {
         key = view_key,
         nodes = nodes,
         display_edges = display_edges,
         edges = display_edges,
+        cycle_lines = own_cycle_lines,
         breadcrumb = {
           { key = "root", label = "root" },
         },
@@ -492,6 +520,42 @@ local function _build_views(modules, graph, dependencies)
         }
       end
     end
+  end
+
+  -- Second pass over the finished views: fill has_cycle_subtree per node and
+  -- aggregate each view's bottom cycle list (own lines first, then every
+  -- descendant view's lines in key order, deduplicated).
+  local view_keys = _sorted_keys(views)
+  local views_with_cycles = {}
+  for _, view_key in ipairs(view_keys) do
+    if #views[view_key].cycle_lines > 0 then
+      views_with_cycles[view_key] = true
+    end
+  end
+  for _, view_key in ipairs(view_keys) do
+    local view = views[view_key]
+    for _, node in ipairs(view.nodes) do
+      node.has_cycle_subtree = _subtree_has_cycle(node.full_name, views_with_cycles, view_keys)
+    end
+    local seen = {}
+    local aggregated = {}
+    local function add_lines(lines)
+      for _, line in ipairs(lines) do
+        if not seen[line] then
+          seen[line] = true
+          aggregated[#aggregated + 1] = line
+        end
+      end
+    end
+    add_lines(view.cycle_lines)
+    local descendant_prefix = view_key .. "."
+    for _, other_key in ipairs(view_keys) do
+      if other_key ~= view_key
+        and (view_key == "root" or other_key:sub(1, #descendant_prefix) == descendant_prefix) then
+        add_lines(views[other_key].cycle_lines)
+      end
+    end
+    view.cycle_lines = aggregated
   end
   return views
 end

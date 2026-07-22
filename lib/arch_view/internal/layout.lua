@@ -293,6 +293,93 @@ function layout.feedback_edge_set(node_ids, edges)
   return feedback
 end
 
+-- BFS shortest path from start to goal over edges, enqueueing neighbors in
+-- lexicographic order to match the original (layers.clj shortest-path).
+-- Returns the node id list from start to goal inclusive, or nil.
+function layout.shortest_path(edges, start, goal)
+  local node_ids = {}
+  local seen_node = {}
+  for _, edge in ipairs(edges or {}) do
+    if not seen_node[edge.from] then
+      seen_node[edge.from] = true
+      node_ids[#node_ids + 1] = edge.from
+    end
+    if not seen_node[edge.to] then
+      seen_node[edge.to] = true
+      node_ids[#node_ids + 1] = edge.to
+    end
+  end
+  local outgoing = _outgoing_map(node_ids, edges)
+  local queue = { { start } }
+  local seen = { [start] = true }
+  while #queue > 0 do
+    local path = table.remove(queue, 1)
+    local node_id = path[#path]
+    if node_id == goal then
+      return path
+    end
+    for _, neighbor in ipairs(_sorted_keys(outgoing[node_id] or {})) do
+      if not seen[neighbor] then
+        seen[neighbor] = true
+        local next_path = {}
+        for _, id in ipairs(path) do
+          next_path[#next_path + 1] = id
+        end
+        next_path[#next_path + 1] = neighbor
+        queue[#queue + 1] = next_path
+      end
+    end
+  end
+  return nil
+end
+
+-- Closed cycle path for one feedback edge: the BFS shortest path to->from on
+-- the acyclic remainder, prefixed with from (a self-loop closes on itself).
+function layout.cycle_path_for_feedback_edge(acyclic_edges, edge)
+  if edge.from == edge.to then
+    return { edge.from, edge.from }
+  end
+  local path = layout.shortest_path(acyclic_edges, edge.to, edge.from)
+  if path == nil then
+    return nil
+  end
+  local cycle = { edge.from }
+  for _, id in ipairs(path) do
+    cycle[#cycle + 1] = id
+  end
+  return cycle
+end
+
+-- One closed cycle path per feedback edge, iterated in (from, to) order and
+-- deduplicated by the joined path (layers.clj cycle-paths).
+function layout.cycle_paths(feedback, edges, acyclic_edges)
+  local feedback_edges = {}
+  for _, edge in ipairs(edges or {}) do
+    if feedback[layout.edge_key(edge.from, edge.to)] then
+      feedback_edges[#feedback_edges + 1] = edge
+    end
+  end
+  table.sort(feedback_edges, function(a, b)
+    if a.from ~= b.from then
+      return a.from < b.from
+    end
+    return a.to < b.to
+  end)
+  local seen = {}
+  local cycles = {}
+  for _, edge in ipairs(feedback_edges) do
+    local path = layout.cycle_path_for_feedback_edge(acyclic_edges, edge)
+    if path ~= nil then
+      local key = table.concat(path, "\0")
+      if not seen[key] then
+        seen[key] = true
+        cycles[#cycles + 1] = path
+      end
+    end
+  end
+  return cycles
+end
+
 -- Longest-path levels on a DAG: nodes with in-degree 0 (nothing depends on
 -- them) get level 1 at the top; every dependency sits at least one level
 -- below its deepest dependent, and the incoming side pushes nodes up too
@@ -342,7 +429,8 @@ function layout.topological_levels(node_ids, edges)
 end
 
 -- Full layering result: normalized edges, feedback set, the remaining DAG,
--- per-node levels, and layers (row = level - 1, modules sorted per level).
+-- closed cycle paths, per-node levels, and layers (row = level - 1, modules
+-- sorted per level).
 function layout.assign_layers(node_ids, raw_edges)
   local edges = layout.normalize_edges(node_ids, raw_edges)
   local feedback = layout.feedback_edge_set(node_ids, edges)
@@ -352,6 +440,7 @@ function layout.assign_layers(node_ids, raw_edges)
       acyclic_edges[#acyclic_edges + 1] = edge
     end
   end
+  local cycles = layout.cycle_paths(feedback, edges, acyclic_edges)
   local levels = layout.topological_levels(node_ids, acyclic_edges)
   local by_level = {}
   for _, node_id in ipairs(node_ids) do
@@ -376,9 +465,23 @@ function layout.assign_layers(node_ids, raw_edges)
     edges = edges,
     feedback = feedback,
     acyclic_edges = acyclic_edges,
+    cycles = cycles,
     levels = levels,
     layers = layers,
   }
+end
+
+-- Set (node_id -> true) of every node sitting in a cyclic component.
+function layout.cyclic_node_set(node_ids, edges)
+  local cyclic = {}
+  for _, component in ipairs(layout.strongly_connected_components(node_ids, edges)) do
+    if layout.cyclic_component(component, edges) then
+      for _, node_id in ipairs(component) do
+        cyclic[node_id] = true
+      end
+    end
+  end
+  return cyclic
 end
 
 function layout.track_width(canvas_width)
@@ -406,7 +509,8 @@ function layout.centered_peer_x(canvas_width, rect_width, peer_index, peer_count
 end
 
 -- Per-view layout: for every node id, its level/row, peer position, and rect
--- on the fixed 1200px canvas, plus the feedback edge set of the view.
+-- on the fixed 1200px canvas, plus the feedback edge set, the closed cycle
+-- paths, and the cyclic node set of the view.
 function layout.compute_view(node_ids, raw_edges)
   local assigned = layout.assign_layers(node_ids, raw_edges)
   local width = layout.CANVAS_WIDTH
@@ -437,6 +541,8 @@ function layout.compute_view(node_ids, raw_edges)
     edges = assigned.edges,
     feedback = assigned.feedback,
     acyclic_edges = assigned.acyclic_edges,
+    cycles = assigned.cycles,
+    cyclic_nodes = layout.cyclic_node_set(node_ids, assigned.edges),
   }
 end
 
