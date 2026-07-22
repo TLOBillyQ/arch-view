@@ -1,5 +1,6 @@
 -- Unit tests for the pure layout engine (lib/arch_view/internal/layout.lua):
--- Tarjan SCC, Eades greedy feedback edges, longest-path layering, and the
+-- Tarjan SCC, exact minimum feedback edge enumeration for small components,
+-- Eades greedy fallback for larger ones, longest-path layering, and the
 -- unclebob arch-view coordinate formulas. No filesystem access here except
 -- one end-to-end analyzer test at the bottom (tmp-dir project with a cycle).
 
@@ -113,19 +114,108 @@ local function test_greedy_order_tie_prefers_largest_name()
     _assert_eq(order[1], "c", "tied differences should pick the largest name")
 end
 
--- Feedback edges are exactly the backward edges in the greedy linear order.
-local function test_feedback_edges_are_backward_in_linear_order()
+-- Small components (<= 8 nodes, <= 12 internal edges) use exact enumeration:
+-- the first edge subset that leaves a DAG is removed. Greedy would have
+-- picked b->c here (the backward edge of its linear order [c, a, b]); exact
+-- picks a->b, the first working single-edge subset in input order.
+local function test_feedback_edges_exact_minimum_for_small_cycle()
     local edges = {
         { from = "a", to = "b" },
         { from = "b", to = "c" },
         { from = "c", to = "a" },
     }
     local feedback = layout.feedback_edge_set({ "a", "b", "c" }, edges)
-    -- greedy order is [c, a, b]: c wins the degree tie, then a is a source.
-    -- Only b->c runs backward, so it alone is removed.
-    _assert_true(feedback[layout.edge_key("b", "c")], "b->c should be a feedback edge")
-    _assert_true(not feedback[layout.edge_key("a", "b")], "a->b follows the order")
-    _assert_true(not feedback[layout.edge_key("c", "a")], "c->a follows the order")
+    _assert_true(feedback[layout.edge_key("a", "b")], "exact enumeration removes a->b")
+    _assert_true(not feedback[layout.edge_key("b", "c")], "b->c stays (greedy would have picked it)")
+    _assert_true(not feedback[layout.edge_key("c", "a")], "c->a stays")
+end
+
+-- exact_feedback_edges returns a mathematically minimal set: the two cycles
+-- a->b->c->a and b->c->b share the edge b->c, so one removal breaks both.
+local function test_exact_feedback_edges_minimal_double_cycle()
+    local feedback = layout.exact_feedback_edges({ "a", "b", "c" }, {
+        { from = "a", to = "b" },
+        { from = "b", to = "c" },
+        { from = "c", to = "a" },
+        { from = "c", to = "b" },
+    })
+    _assert_eq(#feedback, 1, "one edge breaks both cycles")
+    _assert_eq(feedback[1].from, "b")
+    _assert_eq(feedback[1].to, "c")
+end
+
+-- exact_feedback_edges on a DAG removes nothing (the k = 0 subset wins).
+local function test_exact_feedback_edges_empty_on_dag()
+    local feedback = layout.exact_feedback_edges({ "a", "b" }, {
+        { from = "a", to = "b" },
+    })
+    _assert_eq(#feedback, 0, "DAG needs no feedback edges")
+end
+
+-- Boundary: exactly 8 nodes and 12 internal edges still qualifies for exact
+-- enumeration. The only cycle is a->b->c->a; greedy would remove b->c, exact
+-- removes a->b (the first working subset in input order).
+local function test_feedback_edges_exact_at_size_boundary()
+    local node_ids = { "a", "b", "c", "d", "e", "f", "g", "h" }
+    local edges = {
+        { from = "a", to = "b" },
+        { from = "a", to = "d" },
+        { from = "a", to = "e" },
+        { from = "b", to = "c" },
+        { from = "b", to = "d" },
+        { from = "c", to = "a" },
+        { from = "c", to = "e" },
+        { from = "d", to = "e" },
+        { from = "d", to = "f" },
+        { from = "e", to = "f" },
+        { from = "f", to = "g" },
+        { from = "g", to = "h" },
+    }
+    local feedback = layout.feedback_edge_set(node_ids, edges)
+    local count = 0
+    for _ in pairs(feedback) do
+        count = count + 1
+    end
+    _assert_eq(count, 1, "single-cycle component yields the minimum one-edge set")
+    _assert_true(feedback[layout.edge_key("a", "b")], "exact enumeration removes a->b, not greedy's b->c")
+end
+
+-- Beyond the node threshold (9 nodes in the component) the component falls
+-- back to the Eades greedy order [i, a, b, ..., h]; its only backward edge
+-- is h->i, where exact enumeration would have removed a->b.
+local function test_feedback_edges_greedy_beyond_node_threshold()
+    local node_ids = { "a", "b", "c", "d", "e", "f", "g", "h", "i" }
+    local edges = {}
+    for index = 1, 8 do
+        edges[#edges + 1] = { from = node_ids[index], to = node_ids[index + 1] }
+    end
+    edges[#edges + 1] = { from = "i", to = "a" }
+    local feedback = layout.feedback_edge_set(node_ids, edges)
+    _assert_true(feedback[layout.edge_key("h", "i")], "greedy order removes h->i")
+    _assert_true(not feedback[layout.edge_key("a", "b")], "exact enumeration would have removed a->b")
+end
+
+-- Beyond the edge threshold (13 internal edges on 8 nodes) the component
+-- also falls back to greedy, which removes three edges here; the exact
+-- minimum for the same graph is a single edge.
+local function test_feedback_edges_greedy_beyond_edge_threshold()
+    local node_ids = { "a", "b", "c", "d", "e", "f", "g", "h" }
+    local edges = {}
+    for index = 1, 7 do
+        edges[#edges + 1] = { from = node_ids[index], to = node_ids[index + 1] }
+    end
+    edges[#edges + 1] = { from = "h", to = "a" }
+    edges[#edges + 1] = { from = "a", to = "c" }
+    edges[#edges + 1] = { from = "b", to = "d" }
+    edges[#edges + 1] = { from = "c", to = "e" }
+    edges[#edges + 1] = { from = "d", to = "f" }
+    edges[#edges + 1] = { from = "e", to = "g" }
+    local feedback = layout.feedback_edge_set(node_ids, edges)
+    _assert_true(feedback[layout.edge_key("a", "b")], "greedy removes a->b")
+    _assert_true(feedback[layout.edge_key("c", "d")], "greedy removes c->d")
+    _assert_true(feedback[layout.edge_key("c", "e")], "greedy removes c->e")
+    local exact = layout.exact_feedback_edges(node_ids, edges)
+    _assert_eq(#exact, 1, "the exact minimum for the same graph is one edge")
 end
 
 -- Self-loop is always a feedback edge.
@@ -172,10 +262,10 @@ local function test_cycle_paths_closed_format()
         { from = "c", to = "a" },
     }
     local assigned = layout.assign_layers(node_ids, edges)
-    -- greedy order is [c, a, b], so b->c is the only feedback edge; the
-    -- acyclic remainder routes c->a->b, closing the cycle as b->c->a->b.
+    -- exact enumeration removes a->b; the acyclic remainder routes b->c->a,
+    -- closing the cycle as a->b->c->a.
     _assert_eq(#assigned.cycles, 1, "one feedback edge yields one cycle path")
-    _assert_eq(table.concat(assigned.cycles[1], "->"), "b->c->a->b", "closed cycle format")
+    _assert_eq(table.concat(assigned.cycles[1], "->"), "a->b->c->a", "closed cycle format")
 end
 
 -- A DAG has no cycle paths at all.
@@ -338,7 +428,8 @@ local function test_analyzer_wires_layout_and_cycle_break()
             _assert_near(node.rect.width, 105.6, "rect width from layout engine")
             _assert_near(node.rect.height, 70.0, "rect height from layout engine")
         end
-        -- greedy order is [b, a]; removing a->b leaves b->a, so b sits on top.
+        -- exact enumeration removes a->b (the first single-edge subset that
+        -- leaves a DAG), so b sits on top.
         _assert_eq(node_by_id["b"].layer, 0, "b should land on the top row")
         _assert_eq(node_by_id["a"].layer, 1, "a should land one row below")
         _assert_near(node_by_id["b"].rect.y, 42.0, "top row y")
@@ -349,7 +440,7 @@ local function test_analyzer_wires_layout_and_cycle_break()
             _assert_eq(type(edge.cycle_break), "boolean", "edge.cycle_break should be boolean")
             if edge.cycle_break then
                 break_count = break_count + 1
-                _assert_eq(edge.from, "a", "a->b is the backward edge in the greedy order")
+                _assert_eq(edge.from, "a", "a->b is the first exact single-edge subset leaving a DAG")
                 _assert_eq(edge.to, "b")
             end
         end
@@ -426,7 +517,12 @@ return {
     test_greedy_order_sinks_go_right = test_greedy_order_sinks_go_right,
     test_greedy_order_max_degree_diff_goes_left = test_greedy_order_max_degree_diff_goes_left,
     test_greedy_order_tie_prefers_largest_name = test_greedy_order_tie_prefers_largest_name,
-    test_feedback_edges_are_backward_in_linear_order = test_feedback_edges_are_backward_in_linear_order,
+    test_feedback_edges_exact_minimum_for_small_cycle = test_feedback_edges_exact_minimum_for_small_cycle,
+    test_exact_feedback_edges_minimal_double_cycle = test_exact_feedback_edges_minimal_double_cycle,
+    test_exact_feedback_edges_empty_on_dag = test_exact_feedback_edges_empty_on_dag,
+    test_feedback_edges_exact_at_size_boundary = test_feedback_edges_exact_at_size_boundary,
+    test_feedback_edges_greedy_beyond_node_threshold = test_feedback_edges_greedy_beyond_node_threshold,
+    test_feedback_edges_greedy_beyond_edge_threshold = test_feedback_edges_greedy_beyond_edge_threshold,
     test_feedback_edges_include_self_loops = test_feedback_edges_include_self_loops,
     test_shortest_path_bfs_lexicographic = test_shortest_path_bfs_lexicographic,
     test_cycle_path_self_loop_closes_on_itself = test_cycle_path_self_loop_closes_on_itself,

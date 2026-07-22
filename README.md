@@ -11,7 +11,7 @@ self-contained viewer bundle.
 - `lib/arch_view/init.lua`: public API entrypoint (`require("arch_view")`)
 - `lib/arch_view/cli.lua`: public CLI facade (`require("arch_view.cli")`)
 - `lib/arch_view/internal/analyzer.lua`: scan, classify, check, and view model generation
-- `lib/arch_view/internal/layout.lua`: pure layout engine (Tarjan SCC, Eades greedy feedback edges, longest-path layering, unclebob geometry)
+- `lib/arch_view/internal/layout.lua`: pure layout engine (Tarjan SCC, feedback edges: exact minimum-set enumeration for small components, Eades greedy otherwise, longest-path layering, unclebob geometry)
 - `lib/arch_view/internal/service.lua`: public API orchestration and viewer export
 - `lib/arch_view/runtime/*`: filesystem, JSON, and path helpers
 - `viewer/*`: static viewer assets
