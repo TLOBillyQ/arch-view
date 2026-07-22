@@ -1,5 +1,6 @@
 local arch_view = require("arch_view")
 local common = require("arch_view.runtime.common")
+local json_reader = require("arch_view.runtime.json_reader")
 
 local helpers = dofile("tests/helpers.lua")
 
@@ -92,8 +93,22 @@ local function test_analyze_basic()
 
         assert(type(architecture.graph) == "table", "architecture should have graph")
         assert(type(architecture.modules) == "table", "architecture should have modules")
-        assert(type(architecture.layout) == "table", "architecture should have layout")
         assert(type(architecture.check) == "table", "architecture should have check")
+
+        -- Contract v2 (monopoly #231): schema_version = 2 and the v1 dead
+        -- fields (redundant aliases, unconsumed shells) are gone.
+        assert(architecture.schema_version == 2, "schema_version should be 2")
+        assert(architecture.layout == nil, "v2 drops the top-level layout shell")
+        assert(architecture.classified_edges == nil, "v2 drops classified_edges (no consumers)")
+        assert(architecture.projection_cycles == nil, "v2 drops the top-level projection_cycles shell")
+        local root_view = architecture.views["root"]
+        assert(type(root_view) == "table", "root view should exist")
+        assert(type(root_view.display_edges) == "table", "view keeps display_edges")
+        assert(root_view.edges == nil, "v2 drops the edges/display_edges duplicate alias")
+        for _, edge in ipairs(root_view.display_edges) do
+            assert(edge.arrowhead == nil, "v2 drops the dead arrowhead field")
+            assert(edge.route_points == nil, "v2 drops the dead route_points field")
+        end
     end)
 end
 
@@ -155,6 +170,43 @@ local function test_export_viewer_creates_files()
     end)
 end
 
+-- The --in-json readback path takes a v2 scan file and re-exports it
+-- verbatim: schema_version = 2 survives and no v1 dead field reappears
+-- (monopoly #231).
+local function test_export_viewer_in_json_roundtrip_v2()
+    _with_clean_tmp(function()
+        local project_root = common.join_path(tmp_root, "in_json_project")
+        local scan_path = common.join_path(project_root, ".arch_view/architecture.json")
+        _write_sample_project(project_root)
+
+        local scan_result, scan_err = arch_view.write_scan({
+            project_root = project_root,
+            out_path = scan_path,
+        })
+        if scan_result == nil then
+            error(scan_err)
+        end
+
+        local result, err = arch_view.export_viewer({
+            project_root = project_root,
+            in_json = scan_path,
+        })
+        if result == nil then
+            error(err)
+        end
+
+        local exported = _read_file(common.join_path(result.out_dir, "architecture.json"))
+        local decoded = json_reader.decode(exported)
+        assert(decoded.schema_version == 2, "--in-json roundtrip should carry schema_version = 2")
+        assert(decoded.layout == nil, "v2 JSON has no top-level layout shell")
+        assert(decoded.classified_edges == nil, "v2 JSON has no classified_edges")
+        assert(decoded.projection_cycles == nil, "v2 JSON has no top-level projection_cycles shell")
+        assert(decoded.views ~= nil and decoded.views["root"] ~= nil, "v2 JSON keeps views")
+        assert(decoded.views["root"].edges == nil, "v2 view has no edges alias of display_edges")
+        assert(decoded.views["root"].display_edges ~= nil, "v2 view keeps display_edges")
+    end)
+end
+
 local function test_viewer_export_is_self_contained()
     _with_clean_tmp(function()
         local project_root = common.join_path(tmp_root, "self_contained_project")
@@ -180,5 +232,6 @@ return {
     test_check_returns_result = test_check_returns_result,
     test_write_scan_creates_file = test_write_scan_creates_file,
     test_export_viewer_creates_files = test_export_viewer_creates_files,
+    test_export_viewer_in_json_roundtrip_v2 = test_export_viewer_in_json_roundtrip_v2,
     test_viewer_export_is_self_contained = test_viewer_export_is_self_contained,
 }

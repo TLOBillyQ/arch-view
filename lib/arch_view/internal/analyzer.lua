@@ -1,7 +1,12 @@
 local fs = require("arch_view.runtime.fs")
+local json_writer = require("arch_view.runtime.json_writer")
 local layout = require("arch_view.internal.layout")
 
 local analyzer = {}
+
+-- Mark empty-capable lists so the JSON writer encodes them as [] instead of
+-- {} (contract v2, monopoly #231: empty tables encode as empty objects).
+local _array = json_writer.array
 
 local function _sort(values)
   table.sort(values, function(a, b) return tostring(a) < tostring(b) end)
@@ -137,14 +142,14 @@ local function _build_modules(project_root, config)
     modules[module_id] = {
       module_id = module_id,
       module_segments = segments,
-      namespace_segments = _namespace_segments(segments),
+      namespace_segments = _array(_namespace_segments(segments)),
       source_path = path,
       source_text = source,
       source_file_name = _module_source_file_name(path),
       component = component_rule and component_rule.component or nil,
       abstract = abstract_rule ~= nil,
-      internal_requires = {},
-      external_requires = {},
+      internal_requires = _array({}),
+      external_requires = _array({}),
       _raw_requires = _scan_requires(source),
     }
   end
@@ -181,23 +186,7 @@ local function _build_graph(modules)
     if a.from ~= b.from then return a.from < b.from end
     return a.to < b.to
   end)
-  return { nodes = nodes, edges = edges }
-end
-
-local function _classified_edges(graph, modules)
-  local out = {}
-  for _, edge in ipairs(graph.edges or {}) do
-    local from_module = modules[edge.from] or {}
-    local to_module = modules[edge.to] or {}
-    out[#out + 1] = {
-      from = edge.from,
-      to = edge.to,
-      from_component = from_module.component,
-      to_component = to_module.component,
-      type = _edge_type(to_module),
-    }
-  end
-  return out
+  return { nodes = _array(nodes), edges = _array(edges) }
 end
 
 local function _build_check(graph, modules, config)
@@ -225,9 +214,9 @@ local function _build_check(graph, modules, config)
   end
   return {
     ok = #violations == 0,
-    violations = violations,
-    cycles = {},
-    projection_cycles = {},
+    violations = _array(violations),
+    cycles = _array({}),
+    projection_cycles = _array({}),
   }
 end
 
@@ -318,7 +307,7 @@ local function _collect_dependencies(module_ids, by_module, entries)
   for _, index in ipairs(indices) do
     out[#out + 1] = entries[index]
   end
-  return out
+  return _array(out)
 end
 
 local function _build_view_nodes(prefix, modules, dependencies)
@@ -362,7 +351,7 @@ local function _build_view_nodes(prefix, modules, dependencies)
       source_file_name = module_info.source_file_name,
       component = module_info.component,
       abstract = module_info.abstract == true,
-      internal_requires = _copy_array(module_info.internal_requires),
+      internal_requires = _array(_copy_array(module_info.internal_requires)),
       leaf = not drillable,
       drillable = drillable,
       cycle = false,
@@ -399,8 +388,6 @@ local function _build_view_edges(prefix, buckets, graph, modules)
           module_edges = {},
           tooltip = {},
           tooltip_lines = {},
-          arrowhead = "standard",
-          route_points = {},
         }
         aggregated[key] = entry
       end
@@ -426,7 +413,7 @@ local function _build_view_edges(prefix, buckets, graph, modules)
   for _, key in ipairs(_sorted_keys(aggregated)) do
     edges[#edges + 1] = aggregated[key]
   end
-  return edges
+  return _array(edges)
 end
 
 local function _collect_view_prefixes(modules)
@@ -477,7 +464,7 @@ local function _apply_view_layout(nodes, display_edges)
     end
     cycle_lines[#cycle_lines + 1] = table.concat(parts, "->")
   end
-  return cycle_lines
+  return _array(cycle_lines)
 end
 
 -- A node's subtree (its own subview plus every deeper view) contains a cycle.
@@ -507,7 +494,6 @@ local function _build_views(modules, graph, dependencies)
         key = view_key,
         nodes = nodes,
         display_edges = display_edges,
-        edges = display_edges,
         cycle_lines = own_cycle_lines,
         breadcrumb = {
           { key = "root", label = "root" },
@@ -555,7 +541,7 @@ local function _build_views(modules, graph, dependencies)
         add_lines(views[other_key].cycle_lines)
       end
     end
-    view.cycle_lines = aggregated
+    view.cycle_lines = _array(aggregated)
   end
   return views
 end
@@ -570,16 +556,13 @@ function analyzer.analyze(resolved)
   local check = _build_check(graph, modules, config)
   local views = _build_views(modules, graph, dependencies)
   return {
-    schema_version = 1,
+    schema_version = 2,
     project_root = project_root,
     config_path = resolved.config_path,
     modules = modules,
     graph = graph,
-    classified_edges = _classified_edges(graph, modules),
-    layout = {},
     views = views,
     check = check,
-    projection_cycles = {},
   }
 end
 

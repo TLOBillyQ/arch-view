@@ -15,9 +15,17 @@ local function _escape_string(value)
     return (escaped:gsub("[\"\\\r\n\t]", _escape_replacements))
 end
 
+-- Marker metatable for lists that may be empty: an empty Lua table is
+-- ambiguous, and the encoder treats it as an empty OBJECT ({}). Producers
+-- wrap empty-capable lists with json_writer.array so they encode as [].
+local _array_metatable = {}
+
 local function _is_array(value)
     if type(value) ~= "table" then
         return false
+    end
+    if getmetatable(value) == _array_metatable then
+        return true
     end
     local count = 0
     for key in pairs(value) do
@@ -26,6 +34,10 @@ local function _is_array(value)
             return false
         end
         count = count + 1
+    end
+    if count == 0 then
+        -- Empty table: encodes as an empty object ({}), never as [].
+        return false
     end
     for index = 1, count do
         if value[index] == nil then
@@ -67,6 +79,12 @@ end
 
 function json_writer.encode(value)
     return _encode(value)
+end
+
+-- Mark a list so it encodes as a JSON array even when empty. The metatable
+-- is invisible to pairs/ipairs, so Lua-side consumers are unaffected.
+function json_writer.array(value)
+    return setmetatable(value or {}, _array_metatable)
 end
 
 return json_writer
