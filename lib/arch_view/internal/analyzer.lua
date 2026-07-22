@@ -150,6 +150,10 @@ local function _build_modules(project_root, config)
       source_text = source,
       source_file_name = _module_source_file_name(path),
       component = component_rule and component_rule.component or nil,
+      -- Declared governance layer of the matched component rule (arch_view
+      -- #1); nil when the rule declares none, so the JSON key only appears
+      -- for configs that opt into layers.
+      component_layer = component_rule and component_rule.layer or nil,
       abstract = abstract_rule ~= nil,
       internal_requires = _array({}),
       external_requires = _array({}),
@@ -357,6 +361,7 @@ local function _build_view_nodes(prefix, modules, dependencies)
       source_text = module_info.source_text,
       source_file_name = module_info.source_file_name,
       component = module_info.component,
+      component_layer = module_info.component_layer,
       abstract = module_info.abstract == true,
       internal_requires = _copy_array(module_info.internal_requires),
       leaf = not drillable,
@@ -441,8 +446,12 @@ end
 -- Run the layout engine over one view: node layer/rect come from the
 -- topological layering, edges removed as feedback edges get
 -- cycle_break = true, and nodes inside a cyclic component get cycle = true.
+-- With pinned_enabled (arch_view #1) the declared component_layer of each
+-- node pins its row, and every edge additionally gets a direction_violation
+-- boolean (true = upward against the declared layers); the field is absent
+-- entirely when the mode is off, keeping the default output byte-identical.
 -- Returns the view's own closed cycle paths as "a->b->c->a" full-name lines.
-local function _apply_view_layout(nodes, display_edges)
+local function _apply_view_layout(nodes, display_edges, pinned_enabled)
   local node_ids = {}
   for _, node in ipairs(nodes) do
     node_ids[#node_ids + 1] = node.id
@@ -451,7 +460,17 @@ local function _apply_view_layout(nodes, display_edges)
   for _, edge in ipairs(display_edges) do
     edges[#edges + 1] = { from = edge.from, to = edge.to }
   end
-  local view_layout = layout.compute_view(node_ids, edges)
+  local layout_opts = nil
+  if pinned_enabled then
+    local pinned_levels = {}
+    for _, node in ipairs(nodes) do
+      if node.component_layer ~= nil then
+        pinned_levels[node.id] = node.component_layer
+      end
+    end
+    layout_opts = { pinned_levels = pinned_levels }
+  end
+  local view_layout = layout.compute_view(node_ids, edges, layout_opts)
   local full_name_by_id = {}
   for _, node in ipairs(nodes) do
     local entry = view_layout.nodes[node.id]
@@ -462,6 +481,10 @@ local function _apply_view_layout(nodes, display_edges)
   end
   for _, edge in ipairs(display_edges) do
     edge.cycle_break = view_layout.feedback[layout.edge_key(edge.from, edge.to)] == true
+    if pinned_enabled then
+      edge.direction_violation =
+        view_layout.direction_violations[layout.edge_key(edge.from, edge.to)] == true
+    end
   end
   local cycle_lines = {}
   for _, path in ipairs(view_layout.cycles) do
@@ -488,7 +511,7 @@ local function _subtree_has_cycle(full_name, views_with_cycles, view_keys)
   return false
 end
 
-local function _build_views(modules, graph, dependencies)
+local function _build_views(modules, graph, dependencies, pinned_enabled)
   local views = {}
   local prefixes = _collect_view_prefixes(modules)
   for _, view_key in ipairs(_sorted_keys(prefixes)) do
@@ -496,7 +519,7 @@ local function _build_views(modules, graph, dependencies)
     local nodes, buckets = _build_view_nodes(prefix, modules, dependencies)
     if #nodes > 0 then
       local display_edges = _build_view_edges(prefix, buckets, graph, modules)
-      local own_cycle_lines = _apply_view_layout(nodes, display_edges)
+      local own_cycle_lines = _apply_view_layout(nodes, display_edges, pinned_enabled)
       views[view_key] = {
         key = view_key,
         nodes = nodes,
@@ -557,13 +580,18 @@ function analyzer.analyze(resolved)
   local current_dir = fs.current_dir()
   local project_root = fs.resolve_path(current_dir, resolved.project_root or current_dir)
   local config = resolved.config or {}
+  -- Pinned-layer viewing mode (arch_view #1): the CLI/API flag or the config
+  -- global switch, both default off. Presentation only — check semantics do
+  -- not depend on it.
+  local pinned_enabled = resolved.pinned_layers == true or config.pinned_layers == true
   local modules = _build_modules(project_root, config)
   local graph = _build_graph(modules)
   local dependencies = _build_dependency_index(graph, modules)
   local check = _build_check(graph, modules, config)
-  local views = _build_views(modules, graph, dependencies)
+  local views = _build_views(modules, graph, dependencies, pinned_enabled)
   return {
     schema_version = 2,
+    pinned_layers = pinned_enabled or nil,
     project_root = project_root,
     config_path = resolved.config_path,
     modules = modules,

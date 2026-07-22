@@ -35,7 +35,8 @@ var COLORS = {
   backEnabled: 'rgb(225,225,225)',
   backDisabled: 'rgb(205,205,205)',
   backTextDisabled: 'rgb(120,120,120)',
-  searchHighlight: 'rgb(255,140,0)'  // orange dashed frame for the search target (#230)
+  searchHighlight: 'rgb(255,140,0)',  // orange dashed frame for the search target (#230)
+  violationArrow: 'rgb(200,30,30)'    // red upward arrow of a pinned-layer direction violation (#1)
 };
 
 var SCENE_MIN_WIDTH = 1200;      // layout engine canvas width (rect coordinates are based on it)
@@ -108,17 +109,23 @@ function buildSceneModel(view, canvasWidth) {
   });
 
   // Per node, per direction: "has any edge + has any cycle_break edge" plus
-  // the deduplicated counterpart set for the hover popup.
-  var incoming = {};  // id -> { any: true, cycle: true?, deps: {depId: cycleBreak} }
+  // the deduplicated counterpart set for the hover popup. Each counterpart
+  // also remembers whether any of its edges is a pinned-layer direction
+  // violation (#1, field only present when the pinned mode generated the
+  // data).
+  var incoming = {};  // id -> { any, cycle, deps: {depId: {cycle, violation}} }
   var outgoing = {};
   edges.forEach(function (e) {
     var fb = !!e.cycle_break;
+    var vio = !!e.direction_violation;
     var inc = incoming[e.to] || (incoming[e.to] = { any: false, cycle: false, deps: {} });
     inc.any = true; inc.cycle = inc.cycle || fb;
-    inc.deps[e.from] = (inc.deps[e.from] || false) || fb;
+    var incDep = inc.deps[e.from] || (inc.deps[e.from] = { cycle: false, violation: false });
+    incDep.cycle = incDep.cycle || fb; incDep.violation = incDep.violation || vio;
     var out = outgoing[e.from] || (outgoing[e.from] = { any: false, cycle: false, deps: {} });
     out.any = true; out.cycle = out.cycle || fb;
-    out.deps[e.to] = (out.deps[e.to] || false) || fb;
+    var outDep = out.deps[e.to] || (out.deps[e.to] = { cycle: false, violation: false });
+    outDep.cycle = outDep.cycle || fb; outDep.violation = outDep.violation || vio;
   });
 
   // Popup counterpart names drop the current view prefix (the original shows
@@ -131,7 +138,7 @@ function buildSceneModel(view, canvasWidth) {
       if (prefix && name.indexOf(prefix) === 0 && name.length > prefix.length) {
         name = name.substring(prefix.length);
       }
-      return { text: name, cycle: !!dir.deps[depId] };
+      return { text: name, cycle: !!dir.deps[depId].cycle, violation: !!dir.deps[depId].violation };
     });
   }
 
@@ -180,6 +187,26 @@ function buildSceneModel(view, canvasWidth) {
     maxBottom = Math.max(maxBottom, y + h);
   });
 
+  // Pinned-layer direction violations (#1): one red upward arrow per marked
+  // edge, from the top center of the depending node to the bottom center of
+  // its target (which the pinned rows keep above it). Empty unless the data
+  // was generated in pinned mode.
+  var rectById = {};
+  rects.forEach(function (r) { rectById[r.id] = r; });
+  var violationArrows = [];
+  edges.forEach(function (e) {
+    if (!e.direction_violation) return;
+    var from = rectById[e.from];
+    var to = rectById[e.to];
+    if (!from || !to) return;
+    violationArrows.push({
+      from: e.from,
+      to: e.to,
+      x1: from.x + from.width / 2, y1: from.y,
+      x2: to.x + to.width / 2, y2: to.y + to.height
+    });
+  });
+
   // Bottom cycle list: "Cycles:" title 28px below the lowest rect, entries
   // every 16px; the block adds 28 + 20 + 16*n + 24 to the content height.
   var cycleLines = view.cycle_lines || [];
@@ -189,11 +216,26 @@ function buildSceneModel(view, canvasWidth) {
 
   return {
     rects: rects,
+    violationArrows: violationArrows,
     cycleLines: cycleLines,
     cyclesBaseY: maxBottom + 28,
     width: Math.max(canvasWidth, maxRight + SCENE_SIDE_MARGIN),
     height: maxBottom + SCENE_BOTTOM_PADDING + cyclesHeight
   };
+}
+
+// Arrowhead of a violation arrow: an isoceles triangle with its tip at
+// (x2,y2), pointing along the (x1,y1)->(x2,y2) direction; length/width in px.
+// Returns [[tipX,tipY],[baseLeftX,baseLeftY],[baseRightX,baseRightY]], or
+// null for a zero-length segment.
+function arrowHeadPoints(x1, y1, x2, y2, length, width) {
+  var dx = x2 - x1, dy = y2 - y1;
+  var len = Math.sqrt(dx * dx + dy * dy);
+  if (len === 0) return null;
+  var ux = dx / len, uy = dy / len;       // unit vector toward the tip
+  var bx = x2 - ux * length, by = y2 - uy * length;  // base center
+  var px = -uy * (width / 2), py = ux * (width / 2); // perpendicular half-width
+  return [[x2, y2], [bx + px, by + py], [bx - px, by - py]];
 }
 
 // Clamp a popup rectangle into the viewport with a 6px margin.
@@ -263,6 +305,7 @@ var ArchView = {
   splitLabelLines: splitLabelLines,
   maxLabelChars: maxLabelChars,
   buildSceneModel: buildSceneModel,
+  arrowHeadPoints: arrowHeadPoints,
   clampPopup: clampPopup,
   SEARCH_RESULT_LIMIT: SEARCH_RESULT_LIMIT,
   searchNodes: searchNodes,
@@ -470,6 +513,27 @@ function renderScene(viewKey, scene) {
     svg.appendChild(g);
   });
 
+  // Pinned-layer direction violations (#1): a bold red upward arrow per
+  // violating edge, drawn over the rects but never intercepting the mouse
+  // (pointer-events none keeps the node hover/click areas intact).
+  var ARROW_HEAD_LENGTH = 12, ARROW_HEAD_WIDTH = 10;
+  (scene.violationArrows || []).forEach(function (a) {
+    var head = arrowHeadPoints(a.x1, a.y1, a.x2, a.y2, ARROW_HEAD_LENGTH, ARROW_HEAD_WIDTH);
+    if (!head) return;
+    // Shorten the shaft to the arrowhead base so the tip stays crisp.
+    var baseX = (head[1][0] + head[2][0]) / 2, baseY = (head[1][1] + head[2][1]) / 2;
+    svg.appendChild(svgEl('line', {
+      x1: a.x1, y1: a.y1, x2: baseX, y2: baseY,
+      stroke: COLORS.violationArrow, 'stroke-width': 2.5,
+      'pointer-events': 'none'
+    }));
+    svg.appendChild(svgEl('polygon', {
+      points: head.map(function (p) { return p.join(','); }).join(' '),
+      fill: COLORS.violationArrow,
+      'pointer-events': 'none'
+    }));
+  });
+
   // Triangle indicators (no edge lines are drawn; a triangle turns red when
   // any edge in its direction has cycle_break=true). Hover pops the full
   // counterpart list of that direction.
@@ -556,6 +620,7 @@ function showDepPopup(entries, clientX, clientY) {
     row.style.lineHeight = POPUP_LINE_HEIGHT + 'px';
     row.style.height = POPUP_LINE_HEIGHT + 'px';
     if (entry.cycle) row.style.color = COLORS.tooltipCycle;
+    else if (entry.violation) row.style.color = COLORS.violationArrow;
     popup.appendChild(row);
   });
   var width = 18 + CHAR_WIDTH * maxLen;

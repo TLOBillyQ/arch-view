@@ -128,8 +128,28 @@ local function test_cli_viewer_respects_project_root_for_relative_out_dir()
     end)
 end
 
+local function test_cli_scan_pinned_layers_flag()
+    _with_clean_tmp(function()
+        local project_root = common.join_path(tmp_root, "cli_pinned")
+        local out_path = ".arch_view/architecture.json"
+        _write_sample_project(project_root)
+
+        local result = cli.run({"scan", "--out", out_path, "--pinned-layers"}, {
+            default_project_root = project_root,
+        })
+
+        assert(result == true, "cli scan --pinned-layers should succeed")
+        local file = assert(io.open(common.join_path(project_root, out_path), "r"))
+        local content = file:read("*a")
+        file:close()
+        assert(content:find('"pinned_layers":%s*true') ~= nil,
+            "scan output should record the pinned-layers mode")
+    end)
+end
+
 return {
     test_cli_scan_command = test_cli_scan_command,
+    test_cli_scan_pinned_layers_flag = test_cli_scan_pinned_layers_flag,
     test_cli_check_command = test_cli_check_command,
     test_cli_viewer_command = test_cli_viewer_command,
     test_cli_respects_project_root = test_cli_respects_project_root,

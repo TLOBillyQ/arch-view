@@ -21,9 +21,9 @@ local function _usage(command_name)
   local name = tostring(command_name or "arch_view")
   local prefix = "  lua " .. name
   io.write(_text("用法", "Usage") .. ":\n")
-  io.write(prefix .. " scan --out <file> [--project-root <dir>] [--config <file>]\n")
+  io.write(prefix .. " scan --out <file> [--project-root <dir>] [--config <file>] [--pinned-layers]\n")
   io.write(prefix .. " check [--project-root <dir>] [--config <file>]\n")
-  io.write(prefix .. " viewer [--out-dir <dir>] [--project-root <dir>] [--config <file>] [--in-json <file>] [--open]\n")
+  io.write(prefix .. " viewer [--out-dir <dir>] [--project-root <dir>] [--config <file>] [--in-json <file>] [--pinned-layers] [--open]\n")
   io.write(prefix .. "\n")
 end
 
@@ -36,6 +36,7 @@ local function _parse_args(args)
     out_dir = nil,
     in_json = nil,
     open = false,
+    pinned_layers = false,
   }
   local index = 2
   while index <= #args do
@@ -46,6 +47,9 @@ local function _parse_args(args)
       index = index + 2
     elseif token == "--open" then
       options.open = true
+      index = index + 1
+    elseif token == "--pinned-layers" then
+      options.pinned_layers = true
       index = index + 1
     else
       error(_text(
@@ -70,6 +74,7 @@ local function _normalize_options(parsed, opts)
     out_dir = paths.resolve_project_path(project_root, parsed.out_dir),
     in_json = paths.resolve_project_path(project_root, parsed.in_json),
     open = parsed.open,
+    pinned_layers = parsed.pinned_layers,
     asset_root = opts.asset_root and fs.resolve_path(cwd, opts.asset_root) or paths.default_asset_root(),
     open_path = opts.open_path,
   }
