@@ -5,6 +5,10 @@
  * edge in window.ARCH_VIEW_DATA.views.
  * The visual grammar (colors / geometry constants) is copied from
  * unclebob/arch-view; see monopoly research/unclebob-arch-view-visual-grammar.md.
+ * Interactions (monopoly #229): clicking a leaf node opens its source_text in
+ * an in-page modal, +/- zoom the scene via CSS transform, and a viewport
+ * WIDTH change rebuilds the scene re-centered on the wider canvas (a uniform
+ * x shift, since the Lua side centers every layer group on its canvas).
  * The pure-function section is shared by the browser and node (verification
  * scripts).
  */
@@ -79,9 +83,15 @@ function maxLabelChars(rectWidth) {
 // buildSceneModel: flatten view JSON into a directly renderable scene model.
 // view.nodes[].rect holds the real coordinates, used as-is;
 // view.display_edges[].cycle_break drives triangle coloring.
-function buildSceneModel(view) {
+// canvasWidth is the scene canvas width (default SCENE_MIN_WIDTH, the width
+// the Lua layout engine computed rects for). Every layer group is centered on
+// the layout canvas, so re-centering on a wider canvas is a uniform x shift
+// of (canvasWidth - SCENE_MIN_WIDTH) / 2 — still zero layout work here.
+function buildSceneModel(view, canvasWidth) {
   var nodes = view.nodes || [];
   var edges = view.display_edges || [];
+  canvasWidth = Math.max(SCENE_MIN_WIDTH, canvasWidth || SCENE_MIN_WIDTH);
+  var offsetX = (canvasWidth - SCENE_MIN_WIDTH) / 2;
 
   // Per node, per direction: "has any edge + has any cycle_break edge"
   var incoming = {};  // id -> { any: true, cycle: true? }
@@ -100,7 +110,7 @@ function buildSceneModel(view) {
   nodes.forEach(function (node) {
     var rect = node.rect;
     if (!rect) return;
-    var x = rect.x, y = rect.y, w = rect.width, h = rect.height;
+    var x = rect.x + offsetX, y = rect.y, w = rect.width, h = rect.height;
     var label = node.display_label || node.label || node.id;
     var cx = x + w / 2;
     var half = TRIANGLE_SIDE / 2;
@@ -118,6 +128,7 @@ function buildSceneModel(view) {
       leaf: !!node.leaf,
       abstract: !!node.abstract,
       drillable: !!node.drillable,
+      hasSource: typeof node.source_text === 'string' && node.source_text.length > 0,
       // Triangle indicators: at most one per direction; equilateral, side 12,
       // apex pointing down.
       inTriangle: (inc && inc.any) ? {
@@ -135,7 +146,7 @@ function buildSceneModel(view) {
 
   return {
     rects: rects,
-    width: Math.max(SCENE_MIN_WIDTH, maxRight + SCENE_SIDE_MARGIN),
+    width: Math.max(canvasWidth, maxRight + SCENE_SIDE_MARGIN),
     height: maxBottom + SCENE_BOTTOM_PADDING
   };
 }
@@ -170,7 +181,11 @@ var DATA = global.ARCH_VIEW_DATA;
 var VIEWS = (DATA && DATA.views) || {};
 
 var state = {
-  navStack: ['root']   // view key stack, bottom is always 'root'
+  navStack: ['root'],   // view key stack, bottom is always 'root'
+  zoom: 1.0,            // CSS transform scale of the scene (no zoom-stack, #229)
+  sceneWidth: 0,        // last rendered scene size, drives the stage box
+  sceneHeight: 0,
+  lastWidth: 0          // last viewport width; resize rebuilds on width change only
 };
 
 var els = {};
@@ -197,13 +212,20 @@ function drillableTarget(r) {
   return null;
 }
 
+// Scene canvas width follows the viewport (max(1200, viewport - 28), same as
+// the original); a wider canvas re-centers every layer group.
+function canvasWidthFor() {
+  var viewport = (els.sceneScroll && els.sceneScroll.clientWidth) || global.innerWidth || SCENE_MIN_WIDTH;
+  return Math.max(SCENE_MIN_WIDTH, viewport - 28);
+}
+
 function renderView() {
   var viewKey = currentViewKey();
   var view = VIEWS[viewKey];
   if (!view) { state.navStack = ['root']; viewKey = 'root'; view = VIEWS.root; }
   if (!view) return;
   renderToolbar();
-  renderScene(buildSceneModel(view));
+  renderScene(buildSceneModel(view, canvasWidthFor()));
 }
 
 function renderToolbar() {
@@ -246,13 +268,20 @@ function renderToolbar() {
 function renderScene(scene) {
   var svg = els.svg;
   svg.innerHTML = '';
-  svg.setAttribute('width', scene.width);
-  svg.setAttribute('height', Math.max(scene.height, 200));
+  state.sceneWidth = scene.width;
+  state.sceneHeight = Math.max(scene.height, 200);
+  svg.setAttribute('width', state.sceneWidth);
+  svg.setAttribute('height', state.sceneHeight);
 
   scene.rects.forEach(function (r) {
     var g = svgEl('g', { 'data-node': r.id });
     var fill = r.abstract ? COLORS.rectFillAbstract : COLORS.rectFill;
-    if (drillableTarget(r)) g.setAttribute('class', 'node-drillable');
+    var target = drillableTarget(r);
+    if (target) {
+      g.setAttribute('class', 'node-drillable');
+    } else if (r.leaf && r.hasSource) {
+      g.setAttribute('class', 'node-source');
+    }
 
     // Rect: leaf stroke black 3px, non-leaf (120,140,160) 1px
     g.appendChild(svgEl('rect', {
@@ -291,13 +320,18 @@ function renderScene(scene) {
       g.appendChild(t);
     });
 
-    // Click on a drillable node: push the nav stack and switch to the subview
-    var target = drillableTarget(r);
+    // Click on a drillable node: push the nav stack and switch to the subview.
+    // Non-drillable leaf with source: open the source modal. Anything else
+    // (no drill target, no source) does nothing on click.
     if (target) {
       g.addEventListener('click', function () {
         state.navStack.push(target);
         renderView();
         els.sceneScroll.scrollTop = 0;
+      });
+    } else if (r.leaf && r.hasSource) {
+      g.addEventListener('click', function () {
+        openSourceModal(r.node);
       });
     }
     svg.appendChild(g);
@@ -314,15 +348,50 @@ function renderScene(scene) {
       }));
     });
   });
+
+  applyZoom();
+}
+
+/* ---------- Source modal (in-page modal replaces the original Swing window) ---------- */
+
+function openSourceModal(node) {
+  els.modalTitle.textContent = node.full_name || node.id;
+  els.modalBody.textContent = node.source_text || '(no source)';
+  els.modal.style.display = 'flex';
+}
+
+function closeSourceModal() {
+  els.modal.style.display = 'none';
+}
+
+/* ---------- Zoom (simplified: CSS transform, no cursor anchor / zoom-stack) ---------- */
+
+function applyZoom() {
+  var svg = els.svg;
+  svg.style.transform = 'scale(' + state.zoom + ')';
+  svg.style.transformOrigin = '0 0';
+  // The stage box tracks the scaled size so native scrollbars stay correct;
+  // CSS transform scales hit regions too, so hover/click stay aligned.
+  els.stage.style.width = (state.sceneWidth * state.zoom) + 'px';
+  els.stage.style.height = (state.sceneHeight * state.zoom) + 'px';
+}
+
+function zoomBy(factor) {
+  state.zoom = Math.max(0.3, Math.min(4.0, state.zoom * factor));
+  applyZoom();
 }
 
 /* ---------- Startup ---------- */
 
 function init() {
   els.svg = document.getElementById('scene');
+  els.stage = document.getElementById('stage');
   els.sceneScroll = document.getElementById('scene-scroll');
   els.backBtn = document.getElementById('back-btn');
   els.breadcrumb = document.getElementById('breadcrumb');
+  els.modal = document.getElementById('source-modal');
+  els.modalTitle = document.getElementById('source-modal-title');
+  els.modalBody = document.getElementById('source-modal-body');
 
   els.backBtn.addEventListener('click', function () {
     if (state.navStack.length > 1) {
@@ -330,6 +399,35 @@ function init() {
       renderView();
       els.sceneScroll.scrollTop = 0;
     }
+  });
+
+  document.getElementById('zoom-in').addEventListener('click', function () { zoomBy(1.1); });
+  document.getElementById('zoom-out').addEventListener('click', function () { zoomBy(1 / 1.1); });
+
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') { closeSourceModal(); return; }
+    if (ev.key === '+' || ev.key === '=') zoomBy(1.1);
+    if (ev.key === '-') zoomBy(1 / 1.1);
+  });
+
+  document.getElementById('source-modal-close').addEventListener('click', closeSourceModal);
+  els.modal.addEventListener('click', function (ev) {
+    if (ev.target === els.modal) closeSourceModal();
+  });
+
+  // Rebuild the scene only when the viewport WIDTH changes (matching the
+  // original); height-only changes leave the scene alone.
+  state.lastWidth = els.sceneScroll.clientWidth || global.innerWidth;
+  var resizeTimer = null;
+  global.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      var width = els.sceneScroll.clientWidth || global.innerWidth;
+      if (width !== state.lastWidth) {
+        state.lastWidth = width;
+        renderView();
+      }
+    }, 150);
   });
 
   renderView();
