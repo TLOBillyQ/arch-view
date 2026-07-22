@@ -17,6 +17,8 @@ html, body {
   padding: 0 10px;
   box-sizing: border-box;
   border-bottom: 1px solid rgb(210, 214, 220);
+  position: relative;
+  z-index: 10;
 }
 
 /* Back 按钮：可用灰 225 / 禁用 205，文字黑 / 禁用 (120,120,120) */
@@ -56,6 +58,52 @@ html, body {
   text-decoration: none;
   font-weight: bold;
   cursor: default;
+}
+
+/* 跨视图搜索（#230 新增功能，原版没有）：弹簧 + 搜索框 + 结果下拉 */
+#toolbar-spacer {
+  flex: 1;
+}
+
+#search-wrap {
+  position: relative;
+}
+
+#search-input {
+  width: 220px;
+  height: 24px;
+  font-size: 12px;
+  padding: 0 6px;
+  border: 1px solid rgb(170, 175, 182);
+  box-sizing: border-box;
+}
+
+#search-dropdown {
+  display: none;
+  position: absolute;
+  top: 26px;
+  right: 0;
+  width: 340px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid rgb(120, 120, 120);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 40;
+}
+
+.search-item {
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: monospace;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-item:hover {
+  background: rgb(220, 230, 245);
 }
 
 /* 场景滚动区：浏览器原生滚动，背景 (250,250,250) */
