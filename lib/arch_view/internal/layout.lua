@@ -357,7 +357,10 @@ end
 -- EXACT_FEEDBACK_MAX_NODES nodes and EXACT_FEEDBACK_MAX_EDGES internal
 -- edges) get the exact minimum set by enumeration; larger components keep
 -- the Eades greedy linear order, whose backward edges (from ordered at or
--- after to) are removed.
+-- after to) are removed. A nil from the exact path (impossible for a
+-- finite edge list) falls back to greedy too: removing nothing would let
+-- a cyclic component reach layering with its cycle intact, which fails
+-- far more obscurely than a suboptimal edge choice.
 local function _component_feedback_edges(component, edges)
   local set = _to_set(component)
   local internal = {}
@@ -370,7 +373,10 @@ local function _component_feedback_edges(component, edges)
     return {}
   end
   if #component <= layout.EXACT_FEEDBACK_MAX_NODES and #internal <= layout.EXACT_FEEDBACK_MAX_EDGES then
-    return layout.exact_feedback_edges(component, internal) or {}
+    local exact = layout.exact_feedback_edges(component, internal)
+    if exact ~= nil then
+      return exact
+    end
   end
   local order = layout.greedy_order(component, internal)
   local position = {}

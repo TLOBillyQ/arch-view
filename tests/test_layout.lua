@@ -218,6 +218,30 @@ local function test_feedback_edges_greedy_beyond_edge_threshold()
     _assert_eq(#exact, 1, "the exact minimum for the same graph is one edge")
 end
 
+-- exact_feedback_edges returning nil cannot happen for a finite edge list,
+-- but _component_feedback_edges must still remove edges then: falling back
+-- to greedy instead of removing nothing, so a cyclic component never
+-- reaches layering with its cycle intact.
+local function test_feedback_edges_nil_exact_falls_back_to_greedy()
+    local edges = {
+        { from = "a", to = "b" },
+        { from = "b", to = "c" },
+        { from = "c", to = "a" },
+    }
+    local real_exact = layout.exact_feedback_edges
+    layout.exact_feedback_edges = function()
+        return nil
+    end
+    local ok, result = pcall(layout.feedback_edge_set, { "a", "b", "c" }, edges)
+    layout.exact_feedback_edges = real_exact
+    _assert_true(ok, "feedback_edge_set should not raise on nil exact result: " .. tostring(result))
+    local removed = 0
+    for _ in pairs(result) do
+        removed = removed + 1
+    end
+    _assert_eq(removed, 1, "greedy fallback still removes one edge from the 3-cycle")
+end
+
 -- Self-loop is always a feedback edge.
 local function test_feedback_edges_include_self_loops()
     local feedback = layout.feedback_edge_set({ "a" }, { { from = "a", to = "a" } })
@@ -526,6 +550,7 @@ return {
     test_feedback_edges_exact_at_size_boundary = test_feedback_edges_exact_at_size_boundary,
     test_feedback_edges_greedy_beyond_node_threshold = test_feedback_edges_greedy_beyond_node_threshold,
     test_feedback_edges_greedy_beyond_edge_threshold = test_feedback_edges_greedy_beyond_edge_threshold,
+    test_feedback_edges_nil_exact_falls_back_to_greedy = test_feedback_edges_nil_exact_falls_back_to_greedy,
     test_feedback_edges_include_self_loops = test_feedback_edges_include_self_loops,
     test_shortest_path_bfs_lexicographic = test_shortest_path_bfs_lexicographic,
     test_cycle_path_self_loop_closes_on_itself = test_cycle_path_self_loop_closes_on_itself,

@@ -48,7 +48,8 @@ function common.copy_array(values)
   for index, value in ipairs(values or {}) do
     copied[index] = value
   end
-  return copied
+  -- Keep the metatable so a json_writer array marker survives the copy.
+  return setmetatable(copied, getmetatable(values))
 end
 
 function common.starts_with_segments(parts, prefix)

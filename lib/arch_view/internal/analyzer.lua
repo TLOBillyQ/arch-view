@@ -21,12 +21,15 @@ local function _sorted_keys(map)
   return _sort(keys)
 end
 
+-- Copy an array, keeping its metatable so a json_writer array marker
+-- survives the copy; without it an emptied marked array would encode as {}
+-- instead of [] downstream.
 local function _copy_array(values)
   local out = {}
   for _, value in ipairs(values or {}) do
     out[#out + 1] = value
   end
-  return out
+  return setmetatable(out, getmetatable(values))
 end
 
 local function _to_repo_relative(project_root, path)
@@ -216,6 +219,10 @@ local function _build_check(graph, modules, config)
     ok = #violations == 0,
     violations = _array(violations),
     cycles = _array({}),
+    -- Reserved for future per-projection cycle reporting; distinct from the
+    -- deleted top-level same-named empty shell. The cli_runner
+    -- projection_cycle violation branch consumes check.violations entries,
+    -- not this field.
     projection_cycles = _array({}),
   }
 end
@@ -351,7 +358,7 @@ local function _build_view_nodes(prefix, modules, dependencies)
       source_file_name = module_info.source_file_name,
       component = module_info.component,
       abstract = module_info.abstract == true,
-      internal_requires = _array(_copy_array(module_info.internal_requires)),
+      internal_requires = _copy_array(module_info.internal_requires),
       leaf = not drillable,
       drillable = drillable,
       cycle = false,
@@ -360,7 +367,7 @@ local function _build_view_nodes(prefix, modules, dependencies)
       outgoing_dependencies = outgoing,
     }
   end
-  return nodes, buckets
+  return _array(nodes), buckets
 end
 
 local function _build_view_edges(prefix, buckets, graph, modules)
