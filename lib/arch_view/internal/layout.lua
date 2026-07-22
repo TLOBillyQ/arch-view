@@ -12,6 +12,11 @@
 -- same-level lexicographic ordering -> centered peer coordinates on a fixed
 -- 1200px canvas.
 --
+-- Optional pinned-layer mode (arch_view #1, opts.pinned_levels): declared
+-- layers replace the longest-path layering for row assignment and edges
+-- against the declared direction land in a direction_violations set; the
+-- feedback/cycle stages run unchanged.
+--
 -- Edge direction: `from` depends on (requires) `to`. Nodes nobody depends on
 -- (in-degree 0) sit at level 1 on top; each dependent layer goes one deeper.
 
@@ -538,10 +543,74 @@ function layout.topological_levels(node_ids, edges)
   return levels
 end
 
+-- Pinned rows (arch_view #1): nodes with a declared layer are pinned to rows
+-- by that declaration (distinct declared values, ascending, dense — gaps in
+-- the declared numbering do not produce empty rows); nodes without one fall
+-- back to their topological level and sink below the whole pinned block,
+-- dense-ranked among themselves. Returns rows (node_id -> 0-based row) and
+-- row_levels (row -> displayed level: the declared value for pinned rows,
+-- the topological level for fallback rows).
+local function _pinned_rows(node_ids, pinned_levels, topo_levels)
+  local declared = {}
+  local declared_seen = {}
+  local fallback = {}
+  local fallback_seen = {}
+  for _, node_id in ipairs(node_ids) do
+    local pin = pinned_levels[node_id]
+    if pin ~= nil then
+      if not declared_seen[pin] then
+        declared_seen[pin] = true
+        declared[#declared + 1] = pin
+      end
+    else
+      local level = topo_levels[node_id] or 1
+      if not fallback_seen[level] then
+        fallback_seen[level] = true
+        fallback[#fallback + 1] = level
+      end
+    end
+  end
+  table.sort(declared)
+  table.sort(fallback)
+  local declared_rank = {}
+  for index, value in ipairs(declared) do
+    declared_rank[value] = index - 1
+  end
+  local fallback_rank = {}
+  for index, value in ipairs(fallback) do
+    fallback_rank[value] = #declared + index - 1
+  end
+  local rows = {}
+  local row_levels = {}
+  for _, node_id in ipairs(node_ids) do
+    local pin = pinned_levels[node_id]
+    local row
+    local level
+    if pin ~= nil then
+      row = declared_rank[pin]
+      level = pin
+    else
+      level = topo_levels[node_id] or 1
+      row = fallback_rank[level]
+    end
+    rows[node_id] = row
+    row_levels[row] = level
+  end
+  return rows, row_levels
+end
+
 -- Full layering result: normalized edges, feedback set, the remaining DAG,
--- closed cycle paths, per-node levels, and layers (row = level - 1, modules
--- sorted per level).
-function layout.assign_layers(node_ids, raw_edges)
+-- closed cycle paths, per-node levels, and layers (modules sorted per row).
+-- Default mode: row = topological level - 1. With opts.pinned_levels
+-- (node_id -> declared integer layer, arch_view #1) covering at least one
+-- node, declared nodes are pinned to rows by declaration and undeclared
+-- nodes fall back below (_pinned_rows); feedback/cycle semantics are
+-- unchanged, and every edge whose endpoints are both declared with
+-- from deeper than to (an upward arrow against the declared direction) lands
+-- in the direction_violations set (edge_key -> true, always empty without
+-- pinning).
+function layout.assign_layers(node_ids, raw_edges, opts)
+  opts = opts or {}
   local edges = layout.normalize_edges(node_ids, raw_edges)
   local feedback = layout.feedback_edge_set(node_ids, edges)
   local acyclic_edges = {}
@@ -552,23 +621,60 @@ function layout.assign_layers(node_ids, raw_edges)
   end
   local cycles = layout.cycle_paths(feedback, edges, acyclic_edges)
   local levels = layout.topological_levels(node_ids, acyclic_edges)
-  local by_level = {}
+
+  local pinned_levels = opts.pinned_levels
+  local has_pinned = false
+  if pinned_levels ~= nil then
+    for _, node_id in ipairs(node_ids) do
+      if pinned_levels[node_id] ~= nil then
+        has_pinned = true
+        break
+      end
+    end
+  end
+
+  local rows
+  local row_levels
+  if has_pinned then
+    rows, row_levels = _pinned_rows(node_ids, pinned_levels, levels)
+  else
+    rows = {}
+    row_levels = {}
+    for _, node_id in ipairs(node_ids) do
+      local level = levels[node_id] or 1
+      rows[node_id] = level - 1
+      row_levels[level - 1] = level
+    end
+  end
+
+  local direction_violations = {}
+  if has_pinned then
+    for _, edge in ipairs(edges) do
+      local from_pin = pinned_levels[edge.from]
+      local to_pin = pinned_levels[edge.to]
+      if from_pin ~= nil and to_pin ~= nil and from_pin > to_pin then
+        direction_violations[layout.edge_key(edge.from, edge.to)] = true
+      end
+    end
+  end
+
+  local by_row = {}
   for _, node_id in ipairs(node_ids) do
-    local level = levels[node_id] or 1
-    by_level[level] = by_level[level] or {}
-    by_level[level][#by_level[level] + 1] = node_id
+    local row = rows[node_id]
+    by_row[row] = by_row[row] or {}
+    by_row[row][#by_row[row] + 1] = node_id
   end
-  local level_numbers = {}
-  for level in pairs(by_level) do
-    level_numbers[#level_numbers + 1] = level
+  local row_numbers = {}
+  for row in pairs(by_row) do
+    row_numbers[#row_numbers + 1] = row
   end
-  table.sort(level_numbers)
+  table.sort(row_numbers)
   local layers = {}
-  for _, level in ipairs(level_numbers) do
+  for _, row in ipairs(row_numbers) do
     layers[#layers + 1] = {
-      level = level,
-      row = level - 1,
-      modules = _sorted(by_level[level]),
+      level = row_levels[row],
+      row = row,
+      modules = _sorted(by_row[row]),
     }
   end
   return {
@@ -578,6 +684,7 @@ function layout.assign_layers(node_ids, raw_edges)
     cycles = cycles,
     levels = levels,
     layers = layers,
+    direction_violations = direction_violations,
   }
 end
 
@@ -620,9 +727,10 @@ end
 
 -- Per-view layout: for every node id, its level/row, peer position, and rect
 -- on the fixed 1200px canvas, plus the feedback edge set, the closed cycle
--- paths, and the cyclic node set of the view.
-function layout.compute_view(node_ids, raw_edges)
-  local assigned = layout.assign_layers(node_ids, raw_edges)
+-- paths, and the cyclic node set of the view. opts is forwarded to
+-- assign_layers (opts.pinned_levels enables the pinned-layer mode, #1).
+function layout.compute_view(node_ids, raw_edges, opts)
+  local assigned = layout.assign_layers(node_ids, raw_edges, opts)
   local width = layout.CANVAS_WIDTH
   local rect_width = layout.RECT_SCALE * layout.track_width(width)
   local rect_height = layout.RECT_SCALE * layout.LAYER_HEIGHT
@@ -653,6 +761,7 @@ function layout.compute_view(node_ids, raw_edges)
     acyclic_edges = assigned.acyclic_edges,
     cycles = assigned.cycles,
     cyclic_nodes = layout.cyclic_node_set(node_ids, assigned.edges),
+    direction_violations = assigned.direction_violations,
   }
 end
 

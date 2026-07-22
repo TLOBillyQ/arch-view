@@ -414,6 +414,162 @@ local function test_compute_view_row_spacing()
     _assert_near(view.nodes["bottom"].rect.y, 42.0 + 70.0 * 1.5, "row spacing = 1.5 * rect height")
 end
 
+-- Pinned-layer mode (arch_view #1): declared layers pin rows by dense rank of
+-- the distinct declared values, keeping gaps in the numbering from producing
+-- empty rows; node.level keeps the raw declared value.
+local function test_pinned_rows_follow_declared_layers()
+    local view = layout.compute_view({ "app", "domain", "state" }, {
+        { from = "app", to = "domain" },
+        { from = "app", to = "state" },
+    }, { pinned_levels = { app = 1, domain = 2, state = 7 } })
+    _assert_eq(view.nodes["app"].row, 0)
+    _assert_eq(view.nodes["domain"].row, 1)
+    _assert_eq(view.nodes["state"].row, 2, "declared 7 dense-ranks to row 2, no empty rows")
+    _assert_eq(view.nodes["state"].level, 7, "level keeps the raw declared value")
+    _assert_near(view.nodes["state"].rect.y, 42.0 + 2 * 70.0 * 1.5, "row 2 y from the row index")
+end
+
+-- An edge against the declared direction keeps the pinned rows (no reorder)
+-- and lands in direction_violations; it is not a feedback edge (no cycle).
+local function test_pinned_marks_direction_violation()
+    local view = layout.compute_view({ "app", "ui" }, {
+        { from = "ui", to = "app" },
+    }, { pinned_levels = { app = 1, ui = 3 } })
+    _assert_eq(view.nodes["app"].row, 0, "app stays pinned on top despite the upward edge")
+    _assert_eq(view.nodes["ui"].row, 1)
+    _assert_true(view.direction_violations[layout.edge_key("ui", "app")],
+        "ui->app goes upward against the declared layers")
+    _assert_true(next(view.feedback) == nil, "a lone upward edge is no cycle, so no feedback edge")
+end
+
+-- cycle_break semantics survive pinning: a two-node cycle still yields one
+-- feedback edge and its cycle path, while the rows follow the declaration
+-- and only the upward direction is a violation.
+local function test_pinned_keeps_cycle_break_semantics()
+    local view = layout.compute_view({ "a", "b" }, {
+        { from = "a", to = "b" },
+        { from = "b", to = "a" },
+    }, { pinned_levels = { a = 1, b = 2 } })
+    local feedback_count = 0
+    for _ in pairs(view.feedback) do
+        feedback_count = feedback_count + 1
+    end
+    _assert_eq(feedback_count, 1, "two-node cycle still yields one feedback edge")
+    _assert_eq(#view.cycles, 1, "cycle path reporting is unchanged")
+    _assert_eq(view.nodes["a"].row, 0, "rows follow the declaration, not the feedback choice")
+    _assert_eq(view.nodes["b"].row, 1)
+    _assert_true(view.direction_violations[layout.edge_key("b", "a")], "b->a goes upward")
+    _assert_true(not view.direction_violations[layout.edge_key("a", "b")], "a->b follows the declaration")
+end
+
+-- Nodes without a declared layer sink below the whole pinned block, ordered
+-- by their topological level; edges touching an undeclared endpoint are
+-- never direction violations.
+local function test_pinned_undeclared_fall_below()
+    local view = layout.compute_view({ "app", "x", "y" }, {
+        { from = "x", to = "y" },
+        { from = "y", to = "app" },
+    }, { pinned_levels = { app = 1 } })
+    _assert_eq(view.nodes["app"].row, 0)
+    _assert_eq(view.nodes["x"].row, 1, "undeclared topological level 1 lands right below the pinned block")
+    _assert_eq(view.nodes["y"].row, 2)
+    _assert_true(next(view.direction_violations) == nil,
+        "an undeclared endpoint never yields a direction violation")
+end
+
+-- An empty pinned_levels map (no node declared) behaves exactly like the
+-- default mode: topological rows and an empty violation set.
+local function test_pinned_empty_map_falls_back_to_topological()
+    local default_view = layout.compute_view({ "a", "b" }, {
+        { from = "a", to = "b" },
+    })
+    local pinned_view = layout.compute_view({ "a", "b" }, {
+        { from = "a", to = "b" },
+    }, { pinned_levels = {} })
+    _assert_eq(pinned_view.nodes["a"].row, default_view.nodes["a"].row)
+    _assert_eq(pinned_view.nodes["b"].row, default_view.nodes["b"].row)
+    _assert_true(next(default_view.direction_violations) == nil, "default mode has no violations")
+    _assert_true(next(pinned_view.direction_violations) == nil, "no declaration means no violations")
+end
+
+-- End-to-end pinned mode: config declares component layers plus the global
+-- switch; the analyzer pins rows by declaration and marks the upward edge
+-- with direction_violation = true. The same project without the switch keeps
+-- the topological rows and emits no direction_violation field at all.
+local function test_analyzer_pinned_layers_end_to_end()
+    local arch_view = require("arch_view")
+    local common = require("arch_view.runtime.common")
+
+    helpers.with_clean_tmp("arch_view_test_pinned", function(tmp_root)
+        local project_root = common.join_path(tmp_root, "pinned_project")
+        assert(common.ensure_dir(common.join_path(project_root, "src")))
+        local function config_body(extra)
+            return [==[
+{
+  "source_roots": ["src"],
+  "component_rules": [
+    {"name": "app", "match": ["^src%.app$"], "component": "app", "layer": 1},
+    {"name": "ui", "match": ["^src%.ui$"], "component": "ui", "layer": 3}
+  ]]==] .. extra .. "\n}\n"
+        end
+        assert(common.write_file(common.join_path(project_root, "arch_view.config.json"),
+            config_body(',\n  "pinned_layers": true')))
+        assert(common.write_file(common.join_path(project_root, "src/app.lua"), "return {}\n"))
+        assert(common.write_file(common.join_path(project_root, "src/ui.lua"),
+            'local app = require("src.app")\nreturn {}\n'))
+
+        local architecture, analyze_err = arch_view.analyze({ project_root = project_root })
+        if architecture == nil then
+            error(analyze_err)
+        end
+        _assert_eq(architecture.pinned_layers, true, "top-level flag records the mode")
+
+        local root_view = architecture.views["root"]
+        local node_by_id = {}
+        for _, node in ipairs(root_view.nodes) do
+            node_by_id[node.id] = node
+        end
+        _assert_eq(node_by_id["app"].component_layer, 1, "node carries its declared layer")
+        _assert_eq(node_by_id["ui"].component_layer, 3)
+        _assert_eq(node_by_id["app"].layer, 0, "app pinned on top despite ui depending on it")
+        _assert_eq(node_by_id["ui"].layer, 1)
+        _assert_eq(#root_view.display_edges, 1)
+        _assert_eq(root_view.display_edges[1].direction_violation, true, "ui->app is an upward edge")
+        _assert_eq(root_view.display_edges[1].cycle_break, false, "no cycle, so no cycle_break")
+        _assert_eq(architecture.check.ok, true, "pinned mode never touches check semantics")
+
+        -- Same project, switch off: topological rows (app below its dependent)
+        -- and no direction_violation field anywhere.
+        assert(common.write_file(common.join_path(project_root, "arch_view.config.json"),
+            config_body("")))
+        local plain, plain_err = arch_view.analyze({ project_root = project_root })
+        if plain == nil then
+            error(plain_err)
+        end
+        _assert_eq(plain.pinned_layers, nil, "flag key is absent when the mode is off")
+        local plain_nodes = {}
+        for _, node in ipairs(plain.views["root"].nodes) do
+            plain_nodes[node.id] = node
+        end
+        _assert_eq(plain_nodes["ui"].layer, 0, "topological mode puts the dependent on top")
+        _assert_eq(plain_nodes["app"].layer, 1)
+        _assert_eq(plain.views["root"].display_edges[1].direction_violation, nil,
+            "no direction_violation field without the mode")
+
+        -- CLI/API flag alone (config switch off) also enables the mode.
+        local flagged, flagged_err = arch_view.analyze({ project_root = project_root, pinned_layers = true })
+        if flagged == nil then
+            error(flagged_err)
+        end
+        _assert_eq(flagged.pinned_layers, true, "API opt-in works without the config switch")
+        local flagged_nodes = {}
+        for _, node in ipairs(flagged.views["root"].nodes) do
+            flagged_nodes[node.id] = node
+        end
+        _assert_eq(flagged_nodes["app"].layer, 0, "API opt-in pins the rows")
+    end)
+end
+
 -- End-to-end: analyzer wires layout results into view nodes (layer, rect)
 -- and marks the removed feedback edge with cycle_break = true.
 local function test_analyzer_wires_layout_and_cycle_break()
@@ -565,6 +721,12 @@ return {
     test_centered_peer_x_compressed = test_centered_peer_x_compressed,
     test_compute_view_rect_formula = test_compute_view_rect_formula,
     test_compute_view_row_spacing = test_compute_view_row_spacing,
+    test_pinned_rows_follow_declared_layers = test_pinned_rows_follow_declared_layers,
+    test_pinned_marks_direction_violation = test_pinned_marks_direction_violation,
+    test_pinned_keeps_cycle_break_semantics = test_pinned_keeps_cycle_break_semantics,
+    test_pinned_undeclared_fall_below = test_pinned_undeclared_fall_below,
+    test_pinned_empty_map_falls_back_to_topological = test_pinned_empty_map_falls_back_to_topological,
+    test_analyzer_pinned_layers_end_to_end = test_analyzer_pinned_layers_end_to_end,
     test_analyzer_wires_layout_and_cycle_break = test_analyzer_wires_layout_and_cycle_break,
     test_analyzer_fills_has_cycle_subtree = test_analyzer_fills_has_cycle_subtree,
 }

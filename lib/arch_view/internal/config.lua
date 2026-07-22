@@ -55,6 +55,17 @@ local function _validate_config_shape(loaded)
         end
     end
 
+    if loaded.pinned_layers ~= nil and type(loaded.pinned_layers) ~= "boolean" then
+        return nil, "pinned_layers must be a boolean"
+    end
+
+    for index, rule in ipairs(loaded.component_rules or {}) do
+        local layer = rule.layer
+        if layer ~= nil and (type(layer) ~= "number" or layer % 1 ~= 0) then
+            return nil, "component_rules[" .. tostring(index) .. "].layer must be an integer"
+        end
+    end
+
     return true
 end
 

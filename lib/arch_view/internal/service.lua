@@ -23,6 +23,9 @@ local function _resolve_context(opts)
     return nil, err
   end
   resolved.package_root = opts.package_root or paths.package_root()
+  -- CLI/API opt-in for the pinned-layer viewing mode (arch_view #1); the
+  -- config global switch is honored by the analyzer itself.
+  resolved.pinned_layers = opts.pinned_layers == true
   return resolved
 end
 

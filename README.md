@@ -119,6 +119,30 @@ Available entrypoints:
 }
 ```
 
+## Pinned-layer layout mode (issue #1)
+
+An optional presentation mode for architectures with a declared layer model
+(e.g. an L1..L7 governance hierarchy). Rows are pinned by declaration instead
+of the longest-path topology, and edges that point *up* against the declared
+direction are rendered as bold red upward arrows instead of triggering a
+reorder — a review sees "there is a reverse dependency here", not "the
+ordering changed".
+
+- Config: `component_rules` entries take an optional integer `layer`; a
+  top-level `"pinned_layers": true` turns the mode on globally. Components
+  without a declared layer keep the topological behavior and sink below the
+  pinned block.
+- CLI/API: `scan`/`viewer` accept `--pinned-layers` (`pinned_layers = true`
+  in API opts), which enables the mode without the config switch. Note the
+  mode is baked in at analysis time — `viewer --in-json` re-exports whatever
+  the scan produced.
+- Output: rows use the dense rank of the distinct declared values (gaps in
+  the numbering don't create empty rows); `node.component_layer` carries the
+  declaration, every view edge gets `direction_violation` (true = upward
+  against the declaration), and the top level records `"pinned_layers": true`.
+  `cycle_break` semantics and the `check` gate are completely unchanged, and
+  with the mode off the output is byte-identical to before.
+
 ## Tests
 
 Golden-output regression: `tests/compare.lua` regenerates the scan and
@@ -132,6 +156,7 @@ lua tests/bench.lua 50  # analyze benchmark (CPU ms per iteration)
 tests/check_syntax.sh   # luac -p on lib/ + tests/, node --check viewer/script.js
 node tests/smoke_viewer.js  # viewer interaction smoke on a minimal DOM stub
 node tests/viewer_search_smoke.js  # viewer search interaction smoke (minimal DOM stub)
+node tests/viewer_pinned_smoke.js  # pinned-layer scene model / violation arrows (pure functions)
 ```
 
 Unit tests live in `tests/test_*.lua`; each file returns a table of `test_*`
