@@ -329,6 +329,7 @@ local function test_analyzer_wires_layout_and_cycle_break()
         _assert_true(root_view ~= nil, "root view should exist")
         _assert_eq(#root_view.nodes, 2, "root view should have two nodes")
         _assert_eq(#root_view.display_edges, 2, "root view should have two edges")
+        _assert_eq(root_view.edges, nil, "contract v2 drops the edges/display_edges duplicate alias")
 
         local node_by_id = {}
         for _, node in ipairs(root_view.nodes) do
@@ -347,6 +348,8 @@ local function test_analyzer_wires_layout_and_cycle_break()
         local break_count = 0
         for _, edge in ipairs(root_view.display_edges) do
             _assert_eq(type(edge.cycle_break), "boolean", "edge.cycle_break should be boolean")
+            _assert_eq(edge.arrowhead, nil, "contract v2 drops the dead arrowhead field")
+            _assert_eq(edge.route_points, nil, "contract v2 drops the dead route_points field")
             if edge.cycle_break then
                 break_count = break_count + 1
                 _assert_eq(edge.from, "a", "a->b is the backward edge in the greedy order")

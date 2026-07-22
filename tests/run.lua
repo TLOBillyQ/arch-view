@@ -9,6 +9,7 @@ helpers.setup()
 local suites = {
   "tests/test_api.lua",
   "tests/test_cli.lua",
+  "tests/test_json_writer.lua",
   "tests/test_layout.lua",
 }
 
