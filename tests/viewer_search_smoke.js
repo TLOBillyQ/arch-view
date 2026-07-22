@@ -4,7 +4,7 @@
  * interaction: type a query, pick a dropdown result, then assert that
  *   - the nav stack equals manual drill-down to the same view,
  *   - the target node gets the orange dashed highlight frame,
- *   - the scene scrolls the target into view,
+ *   - the scene scrolls the target into view (zoom-scaled when zoomed in),
  *   - Back walks the stack back to root and clears the highlight,
  *   - empty / no-match queries hide the dropdown without navigating.
  *
@@ -186,9 +186,31 @@ check(!!group && group.children.indexOf(hl[0]) >= 0,
 var node = (VIEWS[EXPECT_VIEW].nodes || []).filter(function (n) {
   return n.id === EXPECT_NODE;
 })[0];
-var expectedScroll = Math.max(0, node.rect.y - 600 / 2);
+// The stage is CSS-transform scaled, so the scroll target is y * zoom - h/2.
+var expectedScroll = Math.max(0, node.rect.y * 1 - 600 / 2);
 check(els.sceneScroll.scrollTop === expectedScroll,
   'scene scrolled target into view (scrollTop=' + els.sceneScroll.scrollTop + ')');
+
+/* ---------- Locate while zoomed: scroll position is zoom-scaled ---------- */
+
+// Shrink the stub viewport so y * zoom - h/2 is not clamped to 0, then zoom
+// in via the toolbar button (the only zoom path in this stub) and re-locate.
+els.sceneScroll.clientHeight = 40;
+byId['zoom-in'].dispatch('click');
+byId['zoom-in'].dispatch('click');
+var zoom = parseFloat(/scale\(([^)]+)\)/.exec(els.svg.style.transform)[1]);
+check(zoom > 1, 'zoomed in via the toolbar button (zoom=' + zoom + ')');
+
+els.searchInput.value = QUERY;
+els.searchInput.dispatch('input');
+var zoomItem = els.searchDropdown.children.filter(function (c) {
+  return c.textContent.indexOf(EXPECT_VIEW) >= 0;
+})[0];
+zoomItem.dispatch('mousedown');
+var expectedZoomScroll = Math.max(0, node.rect.y * zoom - 40 / 2);
+check(Math.abs(els.sceneScroll.scrollTop - expectedZoomScroll) < 1e-6,
+  'zoomed locate scrolls to y * zoom - h/2 (scrollTop=' + els.sceneScroll.scrollTop + ')');
+els.sceneScroll.clientHeight = 600;
 
 /* ---------- Back equivalence + highlight clearing ---------- */
 

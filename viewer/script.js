@@ -292,6 +292,11 @@ var state = {
 
 var els = {};
 
+// True while the dependency popup is shown because of a triangle hover; the
+// wheel is routed to the popup only then (hover elsewhere keeps scrolling
+// the scene).
+var popupFromTriangle = false;
+
 function currentViewKey() { return state.navStack[state.navStack.length - 1]; }
 
 function svgEl(tag, attrs) {
@@ -519,7 +524,9 @@ function renderScene(viewKey, scene) {
     if (located) {
       setTimeout(function () {
         var viewportHeight = els.sceneScroll.clientHeight || 0;
-        els.sceneScroll.scrollTop = Math.max(0, located.y - viewportHeight / 2);
+        // The stage is CSS-transform scaled, so scene coordinates map to
+        // scroll coordinates through state.zoom.
+        els.sceneScroll.scrollTop = Math.max(0, located.y * state.zoom - viewportHeight / 2);
       }, 0);
     }
   }
@@ -530,6 +537,7 @@ function renderScene(viewKey, scene) {
 function hidePopups() {
   els.popup.style.display = 'none';
   els.tooltip.style.display = 'none';
+  popupFromTriangle = false;
 }
 
 // Dependency popup: one row per counterpart (sorted, cycle rows red), sized
@@ -537,6 +545,7 @@ function hidePopups() {
 // the cursor's lower right and clamped into the viewport.
 function showDepPopup(entries, clientX, clientY) {
   els.tooltip.style.display = 'none';
+  popupFromTriangle = true;  // only ever called from a triangle hit hover
   var popup = els.popup;
   popup.innerHTML = '';
   var maxLen = 0;
@@ -655,10 +664,11 @@ function init() {
   });
 
   // The popup is pointer-events:none (it must never swallow the hover that
-  // opened it), so wheel scrolling is routed manually: while the dependency
-  // popup is visible, the wheel scrolls it instead of the scene.
+  // opened it), so wheel scrolling is routed manually: only while the popup
+  // is shown by a triangle hover does the wheel scroll it instead of the
+  // scene; any other wheel event keeps scrolling the scene.
   document.addEventListener('wheel', function (ev) {
-    if (els.popup.style.display === 'block') {
+    if (popupFromTriangle && els.popup.style.display === 'block') {
       els.popup.scrollTop += ev.deltaY;
       ev.preventDefault();
     }
@@ -668,7 +678,11 @@ function init() {
   document.getElementById('zoom-out').addEventListener('click', function () { zoomBy(1 / 1.1); });
 
   document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape') { closeSourceModal(); return; }
+    if (ev.key === 'Escape') { closeSourceModal(); hidePopups(); return; }
+    // Zoom keys must not fire while typing in a text field (the search box):
+    // +/=/- are ordinary characters there.
+    var t = ev.target;
+    if (t === els.searchInput || (t && /^(input|textarea)$/i.test(t.tagName || ''))) return;
     if (ev.key === '+' || ev.key === '=') zoomBy(1.1);
     if (ev.key === '-') zoomBy(1 / 1.1);
   });

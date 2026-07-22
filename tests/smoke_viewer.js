@@ -6,6 +6,11 @@
  *   - +/- keys zoom the scene via CSS transform and clicks still land
  *   - a viewport WIDTH change rebuilds the scene re-centered; height-only
  *     changes do not rebuild
+ * Plus the code-review fixes on the #227/#229/#230 merge:
+ *   - zoom keys are ignored while typing in the search input (or any
+ *     input/textarea)
+ *   - Escape also hides the dependency popup / tooltip
+ *   - the wheel scrolls the popup only while it is shown by a triangle hover
  *
  * Run from the repository root:
  *   node tests/smoke_viewer.js [path/to/architecture_data.js]
@@ -200,6 +205,15 @@ async function main() {
   fireDocument('keydown', { key: '-' });
   fireDocument('keydown', { key: '-' });
   check(ids.scene.style.transform === 'scale(1)', '- key zooms back out');
+
+  // --- Zoom keys are ignored while typing in a text field ---
+  fireDocument('keydown', { key: '+', target: ids['search-input'] });
+  check(ids.scene.style.transform === 'scale(1)', '+ typed in the search input does not zoom');
+  fireDocument('keydown', { key: '=', target: ids['search-input'] });
+  check(ids.scene.style.transform === 'scale(1)', '= typed in the search input does not zoom');
+  fireDocument('keydown', { key: '-', target: { tagName: 'textarea' } });
+  check(ids.scene.style.transform === 'scale(1)', 'zoom keys are ignored from any input/textarea');
+
   for (let i = 0; i < 40; i++) fireDocument('keydown', { key: '-' });
   check(ids.scene.style.transform === 'scale(0.3)', 'zoom is clamped at 0.3');
   fireDocument('keydown', { key: '+' }); // back above the floor for the next checks
@@ -214,6 +228,34 @@ async function main() {
   check(ids['source-modal'].style.display === 'flex', 'click still opens the modal while zoomed');
   fireDocument('keydown', { key: 'Escape' });
   fireDocument('keydown', { key: '-' });
+
+  // --- Popup: triangle-hover wheel routing + Escape hides popups ---
+  const hitTri = ids.scene.children.find(
+    (c) => c.tagName === 'polygon' && c.attrs.fill === 'rgba(0,0,0,0)');
+  check(!!hitTri, 'view ' + targetViewKey + ' renders triangle hit areas');
+  hitTri.dispatch('mousemove', { clientX: 100, clientY: 100 });
+  check(ids['dep-popup'].style.display === 'block', 'triangle hover shows the dependency popup');
+
+  let prevented = 0;
+  fireDocument('wheel', { deltaY: 120, preventDefault() { prevented += 1; } });
+  check(ids['dep-popup'].scrollTop === 120 && prevented === 1,
+    'wheel over a triangle-hover popup scrolls the popup, not the scene');
+
+  fireDocument('keydown', { key: 'Escape' });
+  check(ids['dep-popup'].style.display === 'none' && ids['name-tooltip'].style.display === 'none',
+    'Escape also hides the popup and the tooltip');
+
+  // Hover off the triangle (popup hidden): the wheel is not hijacked.
+  prevented = 0;
+  fireDocument('wheel', { deltaY: 120, preventDefault() { prevented += 1; } });
+  check(prevented === 0, 'wheel with the popup hidden keeps scrolling the scene');
+
+  // Popup visible but not opened by a triangle hover: still not hijacked.
+  ids['dep-popup'].style.display = 'block';
+  prevented = 0;
+  fireDocument('wheel', { deltaY: 120, preventDefault() { prevented += 1; } });
+  check(prevented === 0, 'wheel is not routed to a popup not opened by triangle hover');
+  ids['dep-popup'].style.display = 'none';
 
   // --- Resize: width change rebuilds re-centered; height-only does not ---
   const rectXBefore = parseFloat(groupById(sourceLeaf.id).children[0].attrs.x);

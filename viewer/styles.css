@@ -45,10 +45,6 @@ html, body {
   overflow: hidden;
 }
 
-#toolbar-spacer {
-  flex: 1;
-}
-
 /* Zoom buttons: same gray as the enabled Back button */
 .zoom-btn {
   width: 26px;
