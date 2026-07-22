@@ -6,8 +6,9 @@
 -- JS prototype of monopoly issue #221. Function semantics map one-to-one;
 -- naming follows the repo snake_case convention.
 --
--- Pipeline: normalize edges -> Tarjan SCC -> per-component greedy (Eades)
--- feedback edge removal -> longest-path layering on the remaining DAG ->
+-- Pipeline: normalize edges -> Tarjan SCC -> per-component feedback edge
+-- removal (exact minimum-set enumeration for small components, Eades greedy
+-- otherwise) -> longest-path layering on the remaining DAG ->
 -- same-level lexicographic ordering -> centered peer coordinates on a fixed
 -- 1200px canvas.
 --
@@ -24,6 +25,12 @@ layout.RACETRACK_MARGIN = 24.0
 layout.RACETRACK_GAP = 24.0
 layout.LAYER_HEIGHT = 140.0
 layout.RECT_SCALE = 0.5
+
+-- Exact feedback edge enumeration thresholds (monopoly #228, layers.clj:5-6):
+-- a component within both limits gets its exact minimum feedback edge set;
+-- larger components keep the Eades greedy heuristic.
+layout.EXACT_FEEDBACK_MAX_NODES = 8
+layout.EXACT_FEEDBACK_MAX_EDGES = 12
 
 function layout.edge_key(from_id, to_id)
   return tostring(from_id) .. "\0" .. tostring(to_id)
@@ -254,9 +261,103 @@ function layout.greedy_order(node_ids, edges)
   return order
 end
 
--- Feedback edges of one cyclic component: the backward edges (from ordered
--- at or after to) in the greedy linear order. Exact minimum feedback sets
--- are out of scope here (monopoly #228).
+-- choose-k subsets of values in the same recursive order as the original
+-- (layers.clj choose-k): subsets containing the head first, then the rest.
+local function _choose_k(values, k)
+  if k == 0 then
+    return { {} }
+  end
+  if k > #values then
+    return {}
+  end
+  local head = values[1]
+  local tail = {}
+  for index = 2, #values do
+    tail[#tail + 1] = values[index]
+  end
+  local out = {}
+  for _, rest in ipairs(_choose_k(tail, k - 1)) do
+    local subset = { head }
+    for _, value in ipairs(rest) do
+      subset[#subset + 1] = value
+    end
+    out[#out + 1] = subset
+  end
+  for _, subset in ipairs(_choose_k(tail, k)) do
+    out[#out + 1] = subset
+  end
+  return out
+end
+
+-- Kahn DAG check with a lexicographic queue, matching the original
+-- topological-order (layers.clj): every node is ordered iff no cycle remains.
+local function _is_dag(node_ids, edges)
+  local outgoing = _outgoing_map(node_ids, edges)
+  local incoming = _incoming_map(node_ids, edges)
+  local remaining_in = {}
+  local queue = {}
+  for _, node_id in ipairs(node_ids) do
+    remaining_in[node_id] = _set_size(incoming[node_id] or {})
+    if remaining_in[node_id] == 0 then
+      queue[#queue + 1] = node_id
+    end
+  end
+  _sorted(queue)
+  local ordered = 0
+  while #queue > 0 do
+    local node_id = table.remove(queue, 1)
+    ordered = ordered + 1
+    for _, dep in ipairs(_sorted_keys(outgoing[node_id] or {})) do
+      remaining_in[dep] = (remaining_in[dep] or 0) - 1
+      if remaining_in[dep] == 0 then
+        queue[#queue + 1] = dep
+        _sorted(queue)
+      end
+    end
+  end
+  return ordered == #node_ids
+end
+
+-- Exact minimum feedback edge set (monopoly #228, layers.clj:128-138):
+-- enumerate the k-subsets of edges for k = 0, 1, 2, ... in input order; the
+-- first subset whose removal leaves a DAG is a minimum set and is removed.
+-- Determinism comes from the lexicographic edge order upstream
+-- (normalize_edges). Returns nil only when no subset works, which cannot
+-- happen for a finite edge list (removing everything always leaves a DAG).
+function layout.exact_feedback_edges(node_ids, edges)
+  local indices = {}
+  for index = 1, #edges do
+    indices[index] = index
+  end
+  for k = 0, #edges do
+    for _, subset in ipairs(_choose_k(indices, k)) do
+      local removed = {}
+      for _, index in ipairs(subset) do
+        removed[index] = true
+      end
+      local remaining = {}
+      for index, edge in ipairs(edges) do
+        if not removed[index] then
+          remaining[#remaining + 1] = edge
+        end
+      end
+      if _is_dag(node_ids, remaining) then
+        local feedback = {}
+        for _, index in ipairs(subset) do
+          feedback[#feedback + 1] = edges[index]
+        end
+        return feedback
+      end
+    end
+  end
+  return nil
+end
+
+-- Feedback edges of one cyclic component: small components (at most
+-- EXACT_FEEDBACK_MAX_NODES nodes and EXACT_FEEDBACK_MAX_EDGES internal
+-- edges) get the exact minimum set by enumeration; larger components keep
+-- the Eades greedy linear order, whose backward edges (from ordered at or
+-- after to) are removed.
 local function _component_feedback_edges(component, edges)
   local set = _to_set(component)
   local internal = {}
@@ -267,6 +368,9 @@ local function _component_feedback_edges(component, edges)
   end
   if not layout.cyclic_component(component, internal) then
     return {}
+  end
+  if #component <= layout.EXACT_FEEDBACK_MAX_NODES and #internal <= layout.EXACT_FEEDBACK_MAX_EDGES then
+    return layout.exact_feedback_edges(component, internal) or {}
   end
   local order = layout.greedy_order(component, internal)
   local position = {}
