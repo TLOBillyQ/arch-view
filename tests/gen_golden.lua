@@ -2,6 +2,12 @@
 -- Run from the repository root:  lua tests/gen_golden.lua
 -- Only run this intentionally (initial baseline or after a verified output
 -- change); tests/compare.lua treats these files as the expected output.
+--
+-- Update convention (ADR 0039 D4): the golden files are the machine
+-- regression baseline, not the output contract (that is tests/test_contract.lua).
+-- Commit a regeneration on its OWN, standalone commit whose message / PR
+-- description lists which output fields changed and why — never bundle a
+-- ~300KB golden rewrite into an unrelated behavior change.
 
 local helpers = dofile("tests/helpers.lua")
 

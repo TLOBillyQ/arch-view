@@ -4,6 +4,19 @@
 -- Run from the repository root:  lua tests/compare.lua
 -- Exit code 0 and prints OK when everything matches; otherwise prints the
 -- first difference per mismatched file and exits non-zero.
+--
+-- REGRESSION LAYER — MACHINE BASELINE (ADR 0039 D4). The three golden files
+-- under tests/golden are a machine-maintained byte baseline: exhaustive but
+-- not human-readable, and a ~300KB rewrite on any output change. They catch
+-- unintended drift; they do NOT state the output contract. The authoritative,
+-- human-readable statement of that contract is tests/test_contract.lua — read
+-- that to know what the schema guarantees; treat a golden diff as "something
+-- changed, go check the contract layer explains it".
+--
+-- Updating the baseline: never fold a golden rewrite into a behavior change.
+-- Run `lua tests/gen_golden.lua` in its OWN commit, and put a human-readable
+-- "which fields changed and why" summary in that commit message / PR
+-- description. A golden rewrite with no such summary is unreviewable.
 
 local helpers = dofile("tests/helpers.lua")
 

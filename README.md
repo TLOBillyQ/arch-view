@@ -145,6 +145,22 @@ ordering changed".
 
 ## Tests
 
+The output tests are split into two layers with distinct jobs (ADR 0039 D4):
+
+- **Contract layer** — `tests/test_contract.lua`: small, hand-written
+  assertions on the output *schema* (field presence, types, invariants:
+  `schema_version` is an integer; `check.ok`/`check.violations` shape; every
+  violation carries a `kind`, `forbidden_dependency` carries `rule`/`from`/`to`,
+  `unclassified_module` carries `module_id`; pinned-mode view edges carry a
+  boolean `direction_violation`; view edges carry a boolean `cycle_break`).
+  This is the **authoritative, human-readable statement of the output
+  contract** — read it to know what the schema guarantees, and break any field
+  to see it go red without a golden rewrite. It runs under `tests/run.lua`.
+- **Regression layer** — `tests/golden/*` + `tests/compare.lua`: a
+  machine-maintained byte baseline (exhaustive, not human-readable). It catches
+  unintended drift. Regenerate it with `lua tests/gen_golden.lua` on its **own
+  commit**, whose message / PR description lists which fields changed and why.
+
 Golden-output regression: `tests/compare.lua` regenerates the scan and
 viewer outputs for `tests/fixture` and byte-compares them against
 `tests/golden`. Run from the repository root:
