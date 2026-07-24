@@ -154,6 +154,13 @@ local function _build_modules(project_root, config)
       -- #1); nil when the rule declares none, so the JSON key only appears
       -- for configs that opt into layers.
       component_layer = component_rule and component_rule.layer or nil,
+      -- Substrate marker (ADR 0039 D2): a component that sits underneath the
+      -- integer layer stack — anyone may depend on it, it may depend on no
+      -- integer-layered component. Declared as "substrate": true on the rule,
+      -- carries no integer layer, and takes no part in the integer inequality.
+      -- nil unless the rule opts in, so no JSON key appears for configs that
+      -- don't use substrate (byte-compat with pre-substrate output).
+      component_substrate = (component_rule and component_rule.substrate == true) or nil,
       abstract = abstract_rule ~= nil,
       internal_requires = _array({}),
       external_requires = _array({}),
@@ -196,6 +203,40 @@ local function _build_graph(modules)
   return { nodes = _array(nodes), edges = _array(edges) }
 end
 
+-- The declared layer of a module for gate purposes (ADR 0039 D2): an integer
+-- for a component that carries `layer`, the string "substrate" for a substrate
+-- component, or nil when the module declares neither. Substrate deliberately
+-- has no integer value so it never enters the numeric inequality below.
+local function _declared_layer(module)
+  if module == nil then
+    return nil
+  end
+  if module.component_substrate == true then
+    return "substrate"
+  end
+  return module.component_layer
+end
+
+-- Does an edge from_layer -> to_layer point "upward" against the declared
+-- layers (ADR 0039 D2)? L1 is the highest layer, so a larger number is a lower
+-- layer; a lower layer depending on a higher one (from_layer > to_layer) is the
+-- forbidden upward edge. Substrate is a qualitatively different rule, NOT a
+-- number: anyone -> substrate is always legal; substrate -> any integer-layered
+-- component is always a violation (the old foundation_no_upper). Edges where
+-- either end declares no layer are not judged here.
+local function _is_layer_upward(from_layer, to_layer)
+  if from_layer == nil or to_layer == nil then
+    return false
+  end
+  if from_layer == "substrate" then
+    return to_layer ~= "substrate"
+  end
+  if to_layer == "substrate" then
+    return false
+  end
+  return from_layer > to_layer
+end
+
 local function _build_check(graph, modules, config)
   local violations = {}
   for _, module_id in ipairs(_sorted_keys(modules)) do
@@ -217,6 +258,20 @@ local function _build_check(graph, modules, config)
           to = edge.to,
         }
       end
+    end
+    -- Layer-order gate (ADR 0039 D2). Only fires when both ends declare a
+    -- layer/substrate, so configs that opt out stay byte-identical. from_layer
+    -- and to_layer carry the declared values (integer or "substrate").
+    local from_layer = _declared_layer(modules[edge.from])
+    local to_layer = _declared_layer(modules[edge.to])
+    if _is_layer_upward(from_layer, to_layer) then
+      violations[#violations + 1] = {
+        kind = "layer_violation",
+        from = edge.from,
+        to = edge.to,
+        from_layer = from_layer,
+        to_layer = to_layer,
+      }
     end
   end
   return {

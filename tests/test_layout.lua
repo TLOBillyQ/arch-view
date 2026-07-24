@@ -536,7 +536,21 @@ local function test_analyzer_pinned_layers_end_to_end()
         _assert_eq(#root_view.display_edges, 1)
         _assert_eq(root_view.display_edges[1].direction_violation, true, "ui->app is an upward edge")
         _assert_eq(root_view.display_edges[1].cycle_break, false, "no cycle, so no cycle_break")
-        _assert_eq(architecture.check.ok, true, "pinned mode never touches check semantics")
+        -- ADR 0039 D2: layer is now the gate's fact source, so the same upward
+        -- edge that the layout paints as a direction_violation ALSO fails the
+        -- check as a layer_violation. This is independent of the pinned
+        -- presentation switch (the layer gate reads declared layers, not the
+        -- switch); see tests/test_contract.lua for the full violation contract.
+        _assert_eq(architecture.check.ok, false, "an upward edge against declared layers fails the check")
+        local layer_violation
+        for _, violation in ipairs(architecture.check.violations) do
+            if violation.kind == "layer_violation" then
+                layer_violation = violation
+            end
+        end
+        _assert_true(layer_violation ~= nil, "ui(3)->app(1) must be reported as a layer_violation")
+        _assert_eq(layer_violation.from, "src.ui", "layer_violation names the lower-layer origin")
+        _assert_eq(layer_violation.to, "src.app", "layer_violation names the higher-layer target")
 
         -- Same project, switch off: topological rows (app below its dependent)
         -- and no direction_violation field anywhere.

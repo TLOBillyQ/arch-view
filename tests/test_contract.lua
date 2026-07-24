@@ -1,4 +1,4 @@
--- Contract-layer assertions for the arch_view output schema (ADR 0039 D4).
+-- Contract-layer assertions for the arch_view output schema (ADR 0039 D4/D2).
 --
 -- This suite is the SOLE AUTHORITATIVE, human-readable statement of the
 -- arch_view output contract: every field a downstream gate consumes is
@@ -10,8 +10,9 @@
 -- the intent.
 --
 -- Break any asserted field (rename check.violations, drop a violation's kind,
--- stop emitting direction_violation in pinned mode, ...) and this suite goes
--- red without needing a golden rewrite to notice.
+-- stop emitting direction_violation in pinned mode, stop reporting a
+-- layer_violation, ...) and this suite goes red without needing a golden
+-- rewrite to notice.
 
 local arch_view = require("arch_view")
 local common = require("arch_view.runtime.common")
@@ -34,22 +35,31 @@ end
 
 -- Build a controlled project that triggers every check violation kind and,
 -- with pinned layers on, exercises direction_violation / cycle_break on view
--- edges. Layers: base=1, mid=2, top=3; orphan has no component rule.
+-- edges. L1 is the highest layer, so a larger number is a LOWER layer.
 --
---   mid  -> base            downward, legal direction
---   top  -> mid             downward, legal direction
---   top  -> base            downward, but a forbidden dependency (top_no_base)
---   base -> top             upward  -> direction_violation, closes a cycle
---   orphan                  no component rule -> unclassified_module
+--   layers:   top = 1 (highest) > mid = 2 > base = 3 (lowest integer)
+--             foundation = substrate (no integer layer)
+--             orphan = no component rule
+--
+--   top  -> mid            downward (1<2), legal direction
+--   top  -> base           downward (1<3), legal direction, but forbidden by
+--                          the explicit rule top_no_base (forbidden_dependency)
+--   mid  -> base           downward (2<3), legal direction
+--   base -> top            UPWARD (3>1) -> layer_violation, closes a cycle,
+--                          and direction_violation in the pinned layout
+--   base -> foundation     integer -> substrate, always legal
+--   foundation -> mid      substrate -> integer-layered -> layer_violation
+--   orphan                 no component rule -> unclassified_module
 local function _write_project(project_root)
   _mkdir(common.join_path(project_root, "src"))
   _write_file(common.join_path(project_root, "arch_view.config.json"), [[
 {
   "source_roots": ["src"],
   "component_rules": [
-    { "name": "base", "match": ["^src%.base$"], "component": "base", "layer": 1 },
+    { "name": "top", "match": ["^src%.top$"], "component": "top", "layer": 1 },
     { "name": "mid", "match": ["^src%.mid$"], "component": "mid", "layer": 2 },
-    { "name": "top", "match": ["^src%.top$"], "component": "top", "layer": 3 }
+    { "name": "base", "match": ["^src%.base$"], "component": "base", "layer": 3 },
+    { "name": "foundation", "match": ["^src%.foundation$"], "component": "foundation", "substrate": true }
   ],
   "abstract_rules": [],
   "forbidden_dependency_rules": [
@@ -62,10 +72,12 @@ local function _write_project(project_root)
   ]
 }
 ]])
-  _write_file(common.join_path(project_root, "src/base.lua"), 'local top = require("src.top")\nreturn {}')
-  _write_file(common.join_path(project_root, "src/mid.lua"), 'local base = require("src.base")\nreturn {}')
   _write_file(common.join_path(project_root, "src/top.lua"),
     'local mid = require("src.mid")\nlocal base = require("src.base")\nreturn {}')
+  _write_file(common.join_path(project_root, "src/mid.lua"), 'local base = require("src.base")\nreturn {}')
+  _write_file(common.join_path(project_root, "src/base.lua"),
+    'local top = require("src.top")\nlocal foundation = require("src.foundation")\nreturn {}')
+  _write_file(common.join_path(project_root, "src/foundation.lua"), 'local mid = require("src.mid")\nreturn {}')
   _write_file(common.join_path(project_root, "src/orphan.lua"), "return {}")
 end
 
@@ -96,6 +108,15 @@ end
 local function _find_violation(check, kind)
   for _, violation in ipairs(check.violations or {}) do
     if violation.kind == kind then
+      return violation
+    end
+  end
+  return nil
+end
+
+local function _find_violation_where(check, kind, from, to)
+  for _, violation in ipairs(check.violations or {}) do
+    if violation.kind == kind and violation.from == from and violation.to == to then
       return violation
     end
   end
@@ -170,6 +191,43 @@ local function test_unclassified_module_violation_shape()
   end)
 end
 
+-- layer_violation (ADR 0039 D2): a lower layer depending on a higher one. The
+-- violation carries both endpoints AND both declared layer values.
+local function test_layer_violation_integer_shape()
+  _with_architecture(true, function(architecture)
+    local violation = _find_violation_where(architecture.check, "layer_violation", "src.base", "src.top")
+    assert(violation ~= nil, "base(3) -> top(1) must report a layer_violation")
+    assert(violation.from_layer == 3,
+      "layer_violation must carry integer from_layer, got " .. tostring(violation.from_layer))
+    assert(violation.to_layer == 1,
+      "layer_violation must carry integer to_layer, got " .. tostring(violation.to_layer))
+  end)
+end
+
+-- Substrate semantics (ADR 0039 D2): substrate -> any integer-layered
+-- component is always a violation, reported as a layer_violation whose
+-- from_layer is the literal "substrate".
+local function test_substrate_upward_is_violation()
+  _with_architecture(true, function(architecture)
+    local violation = _find_violation_where(architecture.check, "layer_violation", "src.foundation", "src.mid")
+    assert(violation ~= nil, "substrate foundation -> mid(2) must report a layer_violation")
+    assert(violation.from_layer == "substrate",
+      "substrate-origin layer_violation must carry from_layer == 'substrate', got "
+      .. tostring(violation.from_layer))
+    assert(violation.to_layer == 2,
+      "substrate-origin layer_violation must carry the integer to_layer, got " .. tostring(violation.to_layer))
+  end)
+end
+
+-- Substrate semantics (ADR 0039 D2): anyone -> substrate is always legal, so
+-- an integer-layered component depending on substrate produces no violation.
+local function test_dependency_into_substrate_is_legal()
+  _with_architecture(true, function(architecture)
+    local violation = _find_violation_where(architecture.check, "layer_violation", "src.base", "src.foundation")
+    assert(violation == nil, "base(3) -> substrate foundation must NOT be a layer_violation")
+  end)
+end
+
 -- In pinned mode every view edge carries a boolean direction_violation
 -- (arch_view #1); this is the presentation-side fact the review reads.
 local function test_pinned_view_edges_have_direction_violation()
@@ -208,7 +266,8 @@ local function test_view_edges_have_cycle_break()
 end
 
 -- With pinned mode OFF the output is byte-identical to before the feature: the
--- direction_violation field is absent entirely (not false).
+-- direction_violation field is absent entirely (not false). The layer gate
+-- (check.violations) is independent of pinned mode and still fires.
 local function test_default_mode_omits_direction_violation()
   _with_architecture(false, function(architecture)
     assert(architecture.pinned_layers == nil,
@@ -217,6 +276,8 @@ local function test_default_mode_omits_direction_violation()
       assert(edge.direction_violation == nil,
         "default-mode view edge must omit direction_violation entirely")
     end)
+    assert(_find_violation(architecture.check, "layer_violation") ~= nil,
+      "layer gate is independent of pinned mode and must still report violations")
   end)
 end
 
@@ -226,6 +287,9 @@ return {
   test_every_violation_has_kind = test_every_violation_has_kind,
   test_forbidden_dependency_violation_shape = test_forbidden_dependency_violation_shape,
   test_unclassified_module_violation_shape = test_unclassified_module_violation_shape,
+  test_layer_violation_integer_shape = test_layer_violation_integer_shape,
+  test_substrate_upward_is_violation = test_substrate_upward_is_violation,
+  test_dependency_into_substrate_is_legal = test_dependency_into_substrate_is_legal,
   test_pinned_view_edges_have_direction_violation = test_pinned_view_edges_have_direction_violation,
   test_view_edges_have_cycle_break = test_view_edges_have_cycle_break,
   test_default_mode_omits_direction_violation = test_default_mode_omits_direction_violation,

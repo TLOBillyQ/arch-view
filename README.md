@@ -119,6 +119,34 @@ Available entrypoints:
 }
 ```
 
+### Layer gate (`layer` / `substrate`, ADR 0039 D2)
+
+A `component_rules` entry may declare its position in a governance layer stack.
+When it does, `check` enforces the layer order **as a gate fact source** — no
+hand-written `forbidden_dependency_rules` pair is needed to forbid an upward
+dependency. This is a gate feature (it changes what `check` rejects) and is
+independent of the pinned-layer *presentation* mode below.
+
+- `"layer": <integer>` — the component's layer. **L1 is the highest layer**, so
+  a larger number is a lower layer. Dependencies must point downward
+  (higher → lower, i.e. `from.layer < to.layer`). A **lower layer depending on a
+  higher one** (`from.layer > to.layer`) is reported as a `layer_violation`.
+- `"substrate": true` — marks a **substrate** component (e.g. a foundation
+  layer): it carries no integer `layer` and takes no part in the integer
+  inequality. The two `layer`/`substrate` forms are mutually exclusive on a
+  rule; **do not** give a substrate an L0/L8 number. Substrate follows a
+  qualitatively different rule:
+  - anyone → substrate is **always legal**;
+  - substrate → any integer-layered component is **always a violation**.
+
+A `layer_violation` carries `kind`, `from`, `to`, and both declared layer
+values `from_layer` / `to_layer` (each an integer, or the literal `"substrate"`
+for a substrate endpoint). Edges where either end declares no layer are not
+judged by this gate. A config that declares **no** `layer`/`substrate` anywhere
+produces byte-identical output to before this feature — the gate is inert until
+a layer is declared. The output-schema contract for these fields lives in
+`tests/test_contract.lua`.
+
 ## Pinned-layer layout mode (issue #1)
 
 An optional presentation mode for architectures with a declared layer model
@@ -140,8 +168,11 @@ ordering changed".
   the numbering don't create empty rows); `node.component_layer` carries the
   declaration, every view edge gets `direction_violation` (true = upward
   against the declaration), and the top level records `"pinned_layers": true`.
-  `cycle_break` semantics and the `check` gate are completely unchanged, and
-  with the mode off the output is byte-identical to before.
+  `cycle_break` semantics are unchanged, and with the mode off the presentation
+  output is byte-identical to before. Note the pinned **switch** is presentation
+  only; the layer **gate** (`layer`/`substrate` → `layer_violation`, see the
+  Config section) reads the declared layers directly and fires regardless of
+  whether this presentation switch is on.
 
 ## Tests
 
