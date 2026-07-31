@@ -15,6 +15,7 @@
 -- rewrite to notice.
 
 local arch_view = require("arch_view")
+local lu = require("luaunit")
 local common = require("arch_view.runtime.common")
 
 local tmp_root = common.join_path(common.system_tmp_dir(), "arch_view_test_contract")
@@ -138,8 +139,8 @@ end
 -- 0039 D5 keys off exactly this value).
 local function test_schema_version_is_integer()
   _with_architecture(true, function(architecture)
-    assert(architecture.schema_version ~= nil, "schema_version must be present")
-    assert(math.type(architecture.schema_version) == "integer",
+    lu.assertTrue(architecture.schema_version ~= nil, "schema_version must be present")
+    lu.assertTrue(math.type(architecture.schema_version) == "integer",
       "schema_version must be an integer, got " .. tostring(architecture.schema_version))
   end)
 end
@@ -148,9 +149,9 @@ end
 local function test_check_shape()
   _with_architecture(true, function(architecture)
     local check = architecture.check
-    assert(type(check) == "table", "architecture.check must be a table")
-    assert(type(check.ok) == "boolean", "check.ok must be a boolean")
-    assert(type(check.violations) == "table", "check.violations must be a table")
+    lu.assertTrue(type(check) == "table", "architecture.check must be a table")
+    lu.assertTrue(type(check.ok) == "boolean", "check.ok must be a boolean")
+    lu.assertTrue(type(check.violations) == "table", "check.violations must be a table")
   end)
 end
 
@@ -159,9 +160,9 @@ end
 local function test_every_violation_has_kind()
   _with_architecture(true, function(architecture)
     local violations = architecture.check.violations
-    assert(#violations > 0, "the controlled fixture must produce violations")
+    lu.assertTrue(#violations > 0, "the controlled fixture must produce violations")
     for _, violation in ipairs(violations) do
-      assert(type(violation.kind) == "string" and violation.kind ~= "",
+      lu.assertTrue(type(violation.kind) == "string" and violation.kind ~= "",
         "every violation must carry a non-empty string kind")
     end
   end)
@@ -171,12 +172,12 @@ end
 local function test_forbidden_dependency_violation_shape()
   _with_architecture(true, function(architecture)
     local violation = _find_violation(architecture.check, "forbidden_dependency")
-    assert(violation ~= nil, "fixture must produce a forbidden_dependency violation")
-    assert(violation.rule == "top_no_base",
+    lu.assertTrue(violation ~= nil, "fixture must produce a forbidden_dependency violation")
+    lu.assertTrue(violation.rule == "top_no_base",
       "forbidden_dependency must name its rule, got " .. tostring(violation.rule))
-    assert(type(violation.from) == "string" and violation.from ~= "",
+    lu.assertTrue(type(violation.from) == "string" and violation.from ~= "",
       "forbidden_dependency must carry a string `from`")
-    assert(type(violation.to) == "string" and violation.to ~= "",
+    lu.assertTrue(type(violation.to) == "string" and violation.to ~= "",
       "forbidden_dependency must carry a string `to`")
   end)
 end
@@ -185,8 +186,8 @@ end
 local function test_unclassified_module_violation_shape()
   _with_architecture(true, function(architecture)
     local violation = _find_violation(architecture.check, "unclassified_module")
-    assert(violation ~= nil, "fixture must produce an unclassified_module violation")
-    assert(violation.module_id == "src.orphan",
+    lu.assertTrue(violation ~= nil, "fixture must produce an unclassified_module violation")
+    lu.assertTrue(violation.module_id == "src.orphan",
       "unclassified_module must name its module_id, got " .. tostring(violation.module_id))
   end)
 end
@@ -196,10 +197,10 @@ end
 local function test_layer_violation_integer_shape()
   _with_architecture(true, function(architecture)
     local violation = _find_violation_where(architecture.check, "layer_violation", "src.base", "src.top")
-    assert(violation ~= nil, "base(3) -> top(1) must report a layer_violation")
-    assert(violation.from_layer == 3,
+    lu.assertTrue(violation ~= nil, "base(3) -> top(1) must report a layer_violation")
+    lu.assertTrue(violation.from_layer == 3,
       "layer_violation must carry integer from_layer, got " .. tostring(violation.from_layer))
-    assert(violation.to_layer == 1,
+    lu.assertTrue(violation.to_layer == 1,
       "layer_violation must carry integer to_layer, got " .. tostring(violation.to_layer))
   end)
 end
@@ -210,11 +211,11 @@ end
 local function test_substrate_upward_is_violation()
   _with_architecture(true, function(architecture)
     local violation = _find_violation_where(architecture.check, "layer_violation", "src.foundation", "src.mid")
-    assert(violation ~= nil, "substrate foundation -> mid(2) must report a layer_violation")
-    assert(violation.from_layer == "substrate",
+    lu.assertTrue(violation ~= nil, "substrate foundation -> mid(2) must report a layer_violation")
+    lu.assertTrue(violation.from_layer == "substrate",
       "substrate-origin layer_violation must carry from_layer == 'substrate', got "
       .. tostring(violation.from_layer))
-    assert(violation.to_layer == 2,
+    lu.assertTrue(violation.to_layer == 2,
       "substrate-origin layer_violation must carry the integer to_layer, got " .. tostring(violation.to_layer))
   end)
 end
@@ -224,7 +225,7 @@ end
 local function test_dependency_into_substrate_is_legal()
   _with_architecture(true, function(architecture)
     local violation = _find_violation_where(architecture.check, "layer_violation", "src.base", "src.foundation")
-    assert(violation == nil, "base(3) -> substrate foundation must NOT be a layer_violation")
+    lu.assertTrue(violation == nil, "base(3) -> substrate foundation must NOT be a layer_violation")
   end)
 end
 
@@ -233,10 +234,10 @@ end
 local function test_pinned_view_edges_have_direction_violation()
   _with_architecture(true, function(architecture)
     local count = _each_view_edge(architecture, function(edge)
-      assert(type(edge.direction_violation) == "boolean",
+      lu.assertTrue(type(edge.direction_violation) == "boolean",
         "pinned-mode view edge must carry a boolean direction_violation")
     end)
-    assert(count > 0, "fixture must produce at least one view edge")
+    lu.assertTrue(count > 0, "fixture must produce at least one view edge")
     -- base -> top is the upward edge; at least one direction_violation is true.
     local saw_violation = false
     _each_view_edge(architecture, function(edge)
@@ -244,7 +245,7 @@ local function test_pinned_view_edges_have_direction_violation()
         saw_violation = true
       end
     end)
-    assert(saw_violation, "the upward base->top edge must flag direction_violation = true")
+    lu.assertTrue(saw_violation, "the upward base->top edge must flag direction_violation = true")
   end)
 end
 
@@ -254,14 +255,14 @@ local function test_view_edges_have_cycle_break()
   _with_architecture(true, function(architecture)
     local saw_break = false
     local count = _each_view_edge(architecture, function(edge)
-      assert(type(edge.cycle_break) == "boolean",
+      lu.assertTrue(type(edge.cycle_break) == "boolean",
         "view edge must carry a boolean cycle_break")
       if edge.cycle_break == true then
         saw_break = true
       end
     end)
-    assert(count > 0, "fixture must produce at least one view edge")
-    assert(saw_break, "the base<->top cycle must produce at least one cycle_break edge")
+    lu.assertTrue(count > 0, "fixture must produce at least one view edge")
+    lu.assertTrue(saw_break, "the base<->top cycle must produce at least one cycle_break edge")
   end)
 end
 
@@ -270,13 +271,13 @@ end
 -- (check.violations) is independent of pinned mode and still fires.
 local function test_default_mode_omits_direction_violation()
   _with_architecture(false, function(architecture)
-    assert(architecture.pinned_layers == nil,
+    lu.assertTrue(architecture.pinned_layers == nil,
       "default mode must not set the top-level pinned_layers flag")
     _each_view_edge(architecture, function(edge)
-      assert(edge.direction_violation == nil,
+      lu.assertTrue(edge.direction_violation == nil,
         "default-mode view edge must omit direction_violation entirely")
     end)
-    assert(_find_violation(architecture.check, "layer_violation") ~= nil,
+    lu.assertTrue(_find_violation(architecture.check, "layer_violation") ~= nil,
       "layer gate is independent of pinned mode and must still report violations")
   end)
 end

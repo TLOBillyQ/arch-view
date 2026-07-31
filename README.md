@@ -197,7 +197,7 @@ viewer outputs for `tests/fixture` and byte-compares them against
 `tests/golden`. Run from the repository root:
 
 ```sh
-lua tests/run.lua       # unit tests (dependency-free mini harness, exit 0 = all pass)
+lua tests/run.lua       # unit tests (luaunit, exit 0 = all pass)
 lua tests/compare.lua   # regression check (exit 0 = outputs match golden)
 lua tests/bench.lua 50  # analyze benchmark (CPU ms per iteration)
 tests/check_syntax.sh   # luac -p on lib/ + tests/, node --check viewer/script.js
@@ -207,8 +207,11 @@ node tests/viewer_pinned_smoke.js  # pinned-layer scene model / violation arrows
 ```
 
 Unit tests live in `tests/test_*.lua`; each file returns a table of `test_*`
-functions and `tests/run.lua` executes them — add a suite by listing it in
-`tests/run.lua`. No external test framework is required.
+functions and `tests/run.lua` discovers and executes them — add a suite by
+dropping another `test_*.lua` file into `tests/`. The suites use
+[luaunit](https://github.com/bluebird75/luaunit), installed via luarocks
+(`luarocks install luaunit`), following the 4lua-chain test convention
+(ADR-0005/0006); the runner itself remains the only entry point.
 
 Run `lua tests/gen_golden.lua` only when intentionally updating the baseline.
 

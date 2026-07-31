@@ -1,51 +1,63 @@
--- Minimal dependency-free unit test runner for arch_view (no busted).
--- Each suite file returns a table; every entry named test_* is one test.
+-- luaunit test runner for arch_view (4lua-chain convention, ADR-0005/0006).
 -- Run from the repository root:  lua tests/run.lua
+-- Discovers tests/test_*.lua (fixture/golden are test data, not suites;
+-- bench/compare/gen_golden are tooling), loads each file, and runs the
+-- returned luaunit test tables as a single suite.
 -- Exit code 0 when every test passes, 1 otherwise.
 
-local helpers = dofile("tests/helpers.lua")
-helpers.setup()
+local script = arg[0] or "tests/run.lua"
+local root = script:match("^(.+)/tests/run%.lua$") or "."
+package.path = root .. "/lib/?.lua;" .. root .. "/lib/?/init.lua;" .. package.path
 
-local suites = {
-  "tests/test_api.lua",
-  "tests/test_cli.lua",
-  "tests/test_contract.lua",
-  "tests/test_json_writer.lua",
-  "tests/test_layout.lua",
-}
+-- luaunit comes from luarocks, like the rest of the 4lua chain; make the
+-- per-user tree visible so a bare `lua tests/run.lua` works without a
+-- wrapper script injecting LUA_PATH.
+local luarocks = (os.getenv("HOME") or "") .. "/.luarocks/share/lua/5.4/?.lua"
+package.path = package.path .. ";" .. luarocks
 
-local failures = {}
-local total = 0
+local lu = require("luaunit")
 
-for _, suite_path in ipairs(suites) do
-  local suite = dofile(suite_path)
-  local names = {}
-  for name, fn in pairs(suite) do
-    if type(fn) == "function" and name:match("^test_") then
-      names[#names + 1] = name
-    end
-  end
-  table.sort(names)
-  for _, name in ipairs(names) do
-    total = total + 1
-    local ok, err = xpcall(suite[name], debug.traceback)
-    if ok then
-      io.stdout:write(".")
-    else
-      io.stdout:write("F")
-      failures[#failures + 1] = { name = suite_path .. " :: " .. name, err = err }
-    end
-  end
+local function shell_quote(text)
+  return "'" .. tostring(text):gsub("'", "'\\''") .. "'"
 end
 
-io.stdout:write("\n")
-
-if #failures > 0 then
-  for index, failure in ipairs(failures) do
-    io.stderr:write(tostring(index), ") ", failure.name, "\n", tostring(failure.err), "\n")
+local function discover_test_files()
+  local files = {}
+  local pipe = io.popen("find " .. shell_quote(root .. "/tests")
+    .. " -name 'test_*.lua' -type f"
+    .. " -not -path '*/fixture/*'"
+    .. " -not -path '*/golden/*' 2>/dev/null")
+  for line in pipe:lines() do
+    files[#files + 1] = line
   end
-  io.stderr:write(string.format("tests: %d of %d failed\n", #failures, total))
-  os.exit(1)
+  pipe:close()
+  table.sort(files)
+  return files
 end
 
-print(string.format("arch_view tests ok (%d)", total))
+local function suite_name_for(path)
+  local base = tostring(path):match("([^/]+)%.lua$") or tostring(path)
+  return (base:gsub("[^%w_]", "_"))
+end
+
+local instances = {}
+for _, file in ipairs(discover_test_files()) do
+  local chunk, load_err = loadfile(file)
+  if chunk == nil then
+    io.stderr:write("cannot load test file " .. file .. ": " .. tostring(load_err) .. "\n")
+    os.exit(1)
+  end
+  local ok, suite = pcall(chunk)
+  if not ok then
+    io.stderr:write("test file " .. file .. " failed to load: " .. tostring(suite) .. "\n")
+    os.exit(1)
+  end
+  if type(suite) ~= "table" then
+    io.stderr:write("test file " .. file .. " must return a luaunit test table\n")
+    os.exit(1)
+  end
+  instances[#instances + 1] = { suite_name_for(file), suite }
+end
+
+local runner = lu.LuaUnit.new()
+os.exit(runner:runSuiteByInstancesNoCmdLineParsing(instances) > 0 and 1 or 0)
