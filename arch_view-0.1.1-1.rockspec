@@ -24,10 +24,11 @@ test_dependencies = {
 }
 build = {
    type = "builtin",
-   -- viewer 静态资源(index.html/script.js/styles.css)住 lua/viewer/:
-   -- builtin 驱动会把仓库根 lua/ 目录整体拷进 lua_dir(<tree>/share/lua/5.4),
-   -- 安装后 viewer 即 <lua_dir>/viewer,与 paths.default_asset_root() 的
-   -- rock 形态定位一致(见 lib/arch_view/internal/paths.lua)。
+   -- Viewer static assets (index.html/script.js/styles.css) live in
+   -- lua/viewer/: the builtin driver copies the repo-root lua/ directory
+   -- into the lua dir (<tree>/share/lua/5.4), so the installed rock carries
+   -- them at <lua_dir>/viewer, matching paths.default_asset_root()'s rock
+   -- form (see lib/arch_view/internal/paths.lua).
    modules = {
       ["arch_view"] = "lib/arch_view/init.lua",
       ["arch_view.cli"] = "lib/arch_view/cli.lua",

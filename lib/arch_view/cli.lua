@@ -14,8 +14,9 @@ function cli.run(args, env)
     default_config_path = env.default_config_path,
   }
 
-  -- script_dir 下存在 viewer/ 时(源码 / vendor 形态)才覆盖 asset_root;
-  -- rock 形态下 viewer 由 builtin 装进 lua_dir,走 default_asset_root() 定位。
+  -- Override asset_root from script_dir only when a viewer/ dir exists under
+  -- it (source / vendor form); installed rocks carry viewer inside the lua
+  -- dir, resolved by paths.default_asset_root().
   if env.script_dir ~= nil then
     local script_asset_root = common.join_path(env.script_dir, "viewer")
     if common.path_exists(script_asset_root) == true then
