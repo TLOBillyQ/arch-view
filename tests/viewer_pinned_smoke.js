@@ -13,7 +13,7 @@
 'use strict';
 
 const path = require('path');
-const ArchView = require(path.resolve(__dirname, '../viewer/script.js'));
+const ArchView = require(path.resolve(__dirname, '../lua/viewer/script.js'));
 
 let failures = 0;
 function check(cond, label) {

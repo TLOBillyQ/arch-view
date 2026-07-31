@@ -44,16 +44,16 @@ while IFS= read -r file; do
 done < <(find lib tests -type f -name '*.lua' | sort)
 
 if [ -n "$NODE" ]; then
-  if message="$(node --check viewer/script.js 2>&1)"; then
-    echo "OK   viewer/script.js"
+  if message="$(node --check lua/viewer/script.js 2>&1)"; then
+    echo "OK   lua/viewer/script.js"
   else
-    echo "FAIL viewer/script.js"
+    echo "FAIL lua/viewer/script.js"
     echo "$message" | sed 's/^/     /'
     failures=$((failures + 1))
   fi
   checked=$((checked + 1))
 else
-  echo "SKIP viewer/script.js (node not found on PATH)"
+  echo "SKIP lua/viewer/script.js (node not found on PATH)"
 fi
 
 if [ "$failures" -gt 0 ]; then

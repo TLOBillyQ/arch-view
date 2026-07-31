@@ -11,8 +11,16 @@ function paths.package_root()
   return root
 end
 
+-- viewer 资产的两形态定位(与 rockspec 打包对应):
+-- - 源码 / vendor 形态:repo 根有 lib/ 与 lua/viewer/(lua/ 是 builtin 的安装镜像),package_root 解析到 repo 根;
+-- - rock 形态:builtin 把 lua/ 拷进 lua_dir,viewer 就在 <lua_dir>/viewer,package_root 即 lua_dir。
 function paths.default_asset_root()
-  return fs.join_path(paths.package_root(), "viewer")
+  local root = paths.package_root()
+  local direct = fs.join_path(root, "viewer")
+  if fs.path_exists(direct) == true then
+    return direct
+  end
+  return fs.join_path(fs.join_path(root, "lua"), "viewer")
 end
 
 function paths.default_viewer_out_dir(project_root)

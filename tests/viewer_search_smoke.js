@@ -1,6 +1,6 @@
 /* Node smoke test for the viewer's cross-view search (#230).
  *
- * Loads viewer/script.js with a minimal DOM stub and drives the real search
+ * Loads lua/viewer/script.js with a minimal DOM stub and drives the real search
  * interaction: type a query, pick a dropdown result, then assert that
  *   - the nav stack equals manual drill-down to the same view,
  *   - the target node gets the orange dashed highlight frame,
@@ -33,7 +33,7 @@ function check(cond, label) {
   }
 }
 
-/* ---------- Minimal DOM stub (only what viewer/script.js touches) ---------- */
+/* ---------- Minimal DOM stub (only what lua/viewer/script.js touches) ---------- */
 
 function El(tag) {
   this.tagName = tag;
@@ -96,7 +96,7 @@ var VIEWS = (DATA && DATA.views) || {};
 check(Object.keys(VIEWS).length > 0, 'data loaded: views present (' + DATA_PATH + ')');
 check(!!VIEWS[EXPECT_VIEW], 'expected view exists: ' + EXPECT_VIEW);
 
-var ArchView = require(path.resolve('viewer/script.js'));
+var ArchView = require(path.resolve('lua/viewer/script.js'));
 
 var els = {
   svg: byId.scene,

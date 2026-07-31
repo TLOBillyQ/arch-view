@@ -14,7 +14,7 @@ self-contained viewer bundle.
 - `lib/arch_view/internal/layout.lua`: pure layout engine (Tarjan SCC, feedback edges: exact minimum-set enumeration for small components, Eades greedy otherwise, longest-path layering, unclebob geometry)
 - `lib/arch_view/internal/service.lua`: public API orchestration and viewer export
 - `lib/arch_view/runtime/*`: filesystem, JSON, and path helpers
-- `viewer/*`: static viewer assets
+- `lua/viewer/*`: static viewer assets (installed into the rock's lua dir by the builtin driver)
 - `tests/*`: golden-output regression infra (fixture, compare, bench)
 
 ## CLI
@@ -40,7 +40,7 @@ no command). Recognized `env` keys:
 - `command_name`: display name in usage text
 - `default_project_root`: project root when `--project-root` is absent
 - `default_config_path`: config path when `--config` is absent
-- `script_dir`: directory containing `viewer/` assets (sets the viewer asset root)
+- `script_dir`: used as asset root only when a `viewer/` directory exists under it; otherwise assets resolve via `paths.default_asset_root()` (source tree `lua/viewer/`, installed rock `<lua_dir>/viewer`)
 - `open_path`: function used to open the generated viewer (default: OS opener)
 
 Hosts typically wrap this in a small script; see the next section.
@@ -48,7 +48,7 @@ Hosts typically wrap this in a small script; see the next section.
 ## Using arch_view in a new project (eggy example)
 
 1. Vendor the library, e.g. as a git submodule or a plain copy at
-   `eggy/vendor/arch_view` (keep `lib/` and `viewer/`).
+   `eggy/vendor/arch_view` (keep `lib/` and `lua/viewer/`).
 2. Write `eggy/arch_view.config.json` with your `source_roots`,
    `component_rules`, `abstract_rules`, and `forbidden_dependency_rules`
    (schema shown in the Config section below).
@@ -200,7 +200,7 @@ viewer outputs for `tests/fixture` and byte-compares them against
 lua tests/run.lua       # unit tests (luaunit, exit 0 = all pass)
 lua tests/compare.lua   # regression check (exit 0 = outputs match golden)
 lua tests/bench.lua 50  # analyze benchmark (CPU ms per iteration)
-tests/check_syntax.sh   # luac -p on lib/ + tests/, node --check viewer/script.js
+tests/check_syntax.sh   # luac -p on lib/ + tests/, node --check lua/viewer/script.js
 node tests/smoke_viewer.js  # viewer interaction smoke on a minimal DOM stub
 node tests/viewer_search_smoke.js  # viewer search interaction smoke (minimal DOM stub)
 node tests/viewer_pinned_smoke.js  # pinned-layer scene model / violation arrows (pure functions)

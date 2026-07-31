@@ -142,7 +142,7 @@ noSourceLeaf.source_text = '';
 
 /* ---------- Load the viewer (runs init immediately) ---------- */
 
-require(path.resolve(__dirname, '../viewer/script.js'));
+require(path.resolve(__dirname, '../lua/viewer/script.js'));
 
 function groups() {
   return ids.scene.children.filter((c) => c.tagName === 'g');
