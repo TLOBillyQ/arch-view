@@ -17,14 +17,6 @@ function helpers.fail(message)
   os.exit(1)
 end
 
--- Shared assertion for unit suites: strict equality with an expected/actual
--- diff in the failure message.
-function helpers.assert_eq(actual, expected, message)
-  if actual ~= expected then
-    error((message or "values differ") .. "\nexpected: " .. tostring(expected) .. "\nactual: " .. tostring(actual))
-  end
-end
-
 -- Run fn(tmp_root) with a fresh, empty directory under the system temp dir.
 -- The directory is removed afterwards either way; fn errors propagate.
 function helpers.with_clean_tmp(name, fn)

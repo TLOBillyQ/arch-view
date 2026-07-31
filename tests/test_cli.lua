@@ -1,4 +1,5 @@
 local cli = require("arch_view.cli")
+local lu = require("luaunit")
 local common = require("arch_view.runtime.common")
 
 local tmp_root = common.join_path(common.system_tmp_dir(), "arch_view_test_cli")
@@ -60,8 +61,8 @@ local function test_cli_scan_command()
             default_project_root = project_root,
         })
 
-        assert(result == true, "cli scan should succeed")
-        assert(_exists(common.join_path(project_root, out_path)), "cli scan should write output")
+        lu.assertTrue(result == true, "cli scan should succeed")
+        lu.assertTrue(_exists(common.join_path(project_root, out_path)), "cli scan should write output")
     end)
 end
 
@@ -76,7 +77,7 @@ local function test_cli_check_command()
             })
         end)
 
-        assert(ok, "cli check should succeed: " .. tostring(err))
+        lu.assertTrue(ok, "cli check should succeed: " .. tostring(err))
     end)
 end
 
@@ -90,8 +91,8 @@ local function test_cli_viewer_command()
             default_project_root = project_root,
         })
 
-        assert(result == true, "cli viewer should succeed")
-        assert(_exists(common.join_path(project_root, out_dir, "index.html")), "cli viewer should write index.html")
+        lu.assertTrue(result == true, "cli viewer should succeed")
+        lu.assertTrue(_exists(common.join_path(project_root, out_dir, "index.html")), "cli viewer should write index.html")
     end)
 end
 
@@ -106,8 +107,8 @@ local function test_cli_respects_project_root()
             "--project-root", project_root,
         })
 
-        assert(result == true, "cli should respect --project-root")
-        assert(_exists(common.join_path(project_root, ".arch_view/out.json")), "output should be in project root")
+        lu.assertTrue(result == true, "cli should respect --project-root")
+        lu.assertTrue(_exists(common.join_path(project_root, ".arch_view/out.json")), "output should be in project root")
     end)
 end
 
@@ -122,8 +123,8 @@ local function test_cli_viewer_respects_project_root_for_relative_out_dir()
             "--project-root", project_root,
         })
 
-        assert(result == true, "cli viewer should respect --project-root")
-        assert(_exists(common.join_path(project_root, ".arch_view/custom-viewer/index.html")),
+        lu.assertTrue(result == true, "cli viewer should respect --project-root")
+        lu.assertTrue(_exists(common.join_path(project_root, ".arch_view/custom-viewer/index.html")),
             "viewer output should be rooted at project_root")
     end)
 end
@@ -138,11 +139,11 @@ local function test_cli_scan_pinned_layers_flag()
             default_project_root = project_root,
         })
 
-        assert(result == true, "cli scan --pinned-layers should succeed")
+        lu.assertTrue(result == true, "cli scan --pinned-layers should succeed")
         local file = assert(io.open(common.join_path(project_root, out_path), "r"))
         local content = file:read("*a")
         file:close()
-        assert(content:find('"pinned_layers":%s*true') ~= nil,
+        lu.assertTrue(content:find('"pinned_layers":%s*true') ~= nil,
             "scan output should record the pinned-layers mode")
     end)
 end

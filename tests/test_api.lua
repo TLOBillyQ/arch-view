@@ -1,4 +1,5 @@
 local arch_view = require("arch_view")
+local lu = require("luaunit")
 local common = require("arch_view.runtime.common")
 local json_reader = require("arch_view.runtime.json_reader")
 
@@ -6,7 +7,6 @@ local helpers = dofile("tests/helpers.lua")
 
 local tmp_root = common.join_path(common.system_tmp_dir(), "arch_view_test_api")
 
-local _assert_eq = helpers.assert_eq
 
 local function _assert_contains(list, expected, message)
     for _, value in ipairs(list or {}) do
@@ -91,23 +91,23 @@ local function test_analyze_basic()
             error(err)
         end
 
-        assert(type(architecture.graph) == "table", "architecture should have graph")
-        assert(type(architecture.modules) == "table", "architecture should have modules")
-        assert(type(architecture.check) == "table", "architecture should have check")
+        lu.assertTrue(type(architecture.graph) == "table", "architecture should have graph")
+        lu.assertTrue(type(architecture.modules) == "table", "architecture should have modules")
+        lu.assertTrue(type(architecture.check) == "table", "architecture should have check")
 
         -- Contract v2 (monopoly #231): schema_version = 2 and the v1 dead
         -- fields (redundant aliases, unconsumed shells) are gone.
-        assert(architecture.schema_version == 2, "schema_version should be 2")
-        assert(architecture.layout == nil, "v2 drops the top-level layout shell")
-        assert(architecture.classified_edges == nil, "v2 drops classified_edges (no consumers)")
-        assert(architecture.projection_cycles == nil, "v2 drops the top-level projection_cycles shell")
+        lu.assertTrue(architecture.schema_version == 2, "schema_version should be 2")
+        lu.assertTrue(architecture.layout == nil, "v2 drops the top-level layout shell")
+        lu.assertTrue(architecture.classified_edges == nil, "v2 drops classified_edges (no consumers)")
+        lu.assertTrue(architecture.projection_cycles == nil, "v2 drops the top-level projection_cycles shell")
         local root_view = architecture.views["root"]
-        assert(type(root_view) == "table", "root view should exist")
-        assert(type(root_view.display_edges) == "table", "view keeps display_edges")
-        assert(root_view.edges == nil, "v2 drops the edges/display_edges duplicate alias")
+        lu.assertTrue(type(root_view) == "table", "root view should exist")
+        lu.assertTrue(type(root_view.display_edges) == "table", "view keeps display_edges")
+        lu.assertTrue(root_view.edges == nil, "v2 drops the edges/display_edges duplicate alias")
         for _, edge in ipairs(root_view.display_edges) do
-            assert(edge.arrowhead == nil, "v2 drops the dead arrowhead field")
-            assert(edge.route_points == nil, "v2 drops the dead route_points field")
+            lu.assertTrue(edge.arrowhead == nil, "v2 drops the dead arrowhead field")
+            lu.assertTrue(edge.route_points == nil, "v2 drops the dead route_points field")
         end
     end)
 end
@@ -124,9 +124,9 @@ local function test_check_returns_result()
             error(err)
         end
 
-        assert(type(result.check) == "table", "check result should have check field")
-        assert(type(result.check.ok) == "boolean", "check.ok should be boolean")
-        assert(result.project_root == project_root, "should return project root")
+        lu.assertTrue(type(result.check) == "table", "check result should have check field")
+        lu.assertTrue(type(result.check.ok) == "boolean", "check.ok should be boolean")
+        lu.assertTrue(result.project_root == project_root, "should return project root")
     end)
 end
 
@@ -144,9 +144,9 @@ local function test_write_scan_creates_file()
             error(err)
         end
 
-        assert(_exists(out_path), "scan should write output file")
+        lu.assertTrue(_exists(out_path), "scan should write output file")
         local content = _read_file(out_path)
-        assert(#content > 0, "output file should not be empty")
+        lu.assertTrue(#content > 0, "output file should not be empty")
     end)
 end
 
@@ -162,11 +162,11 @@ local function test_export_viewer_creates_files()
             error(err)
         end
 
-        assert(_exists(result.index_path), "viewer should write index.html")
-        assert(_exists(common.join_path(result.out_dir, "architecture.json")), "viewer should write architecture.json")
-        assert(_exists(common.join_path(result.out_dir, "architecture_data.js")), "viewer should write architecture_data.js")
-        assert(_exists(common.join_path(result.out_dir, "script.js")), "viewer should copy script.js")
-        assert(_exists(common.join_path(result.out_dir, "styles.css")), "viewer should copy styles.css")
+        lu.assertTrue(_exists(result.index_path), "viewer should write index.html")
+        lu.assertTrue(_exists(common.join_path(result.out_dir, "architecture.json")), "viewer should write architecture.json")
+        lu.assertTrue(_exists(common.join_path(result.out_dir, "architecture_data.js")), "viewer should write architecture_data.js")
+        lu.assertTrue(_exists(common.join_path(result.out_dir, "script.js")), "viewer should copy script.js")
+        lu.assertTrue(_exists(common.join_path(result.out_dir, "styles.css")), "viewer should copy styles.css")
     end)
 end
 
@@ -197,13 +197,13 @@ local function test_export_viewer_in_json_roundtrip_v2()
 
         local exported = _read_file(common.join_path(result.out_dir, "architecture.json"))
         local decoded = json_reader.decode(exported)
-        assert(decoded.schema_version == 2, "--in-json roundtrip should carry schema_version = 2")
-        assert(decoded.layout == nil, "v2 JSON has no top-level layout shell")
-        assert(decoded.classified_edges == nil, "v2 JSON has no classified_edges")
-        assert(decoded.projection_cycles == nil, "v2 JSON has no top-level projection_cycles shell")
-        assert(decoded.views ~= nil and decoded.views["root"] ~= nil, "v2 JSON keeps views")
-        assert(decoded.views["root"].edges == nil, "v2 view has no edges alias of display_edges")
-        assert(decoded.views["root"].display_edges ~= nil, "v2 view keeps display_edges")
+        lu.assertTrue(decoded.schema_version == 2, "--in-json roundtrip should carry schema_version = 2")
+        lu.assertTrue(decoded.layout == nil, "v2 JSON has no top-level layout shell")
+        lu.assertTrue(decoded.classified_edges == nil, "v2 JSON has no classified_edges")
+        lu.assertTrue(decoded.projection_cycles == nil, "v2 JSON has no top-level projection_cycles shell")
+        lu.assertTrue(decoded.views ~= nil and decoded.views["root"] ~= nil, "v2 JSON keeps views")
+        lu.assertTrue(decoded.views["root"].edges == nil, "v2 view has no edges alias of display_edges")
+        lu.assertTrue(decoded.views["root"].display_edges ~= nil, "v2 view keeps display_edges")
     end)
 end
 

@@ -5,10 +5,10 @@
 -- one end-to-end analyzer test at the bottom (tmp-dir project with a cycle).
 
 local layout = require("arch_view.internal.layout")
+local lu = require("luaunit")
 
 local helpers = dofile("tests/helpers.lua")
 
-local _assert_eq = helpers.assert_eq
 
 local function _assert_near(actual, expected, message)
     if math.abs(actual - expected) > 1e-9 then
@@ -45,17 +45,17 @@ local function test_tarjan_finds_cycle_component()
         { from = "c", to = "a" },
     })
     local shapes = _sorted_components(components)
-    _assert_eq(#shapes, 2, "should find two components")
-    _assert_eq(shapes[1], "a,b,c")
-    _assert_eq(shapes[2], "d")
+    lu.assertEquals(#shapes, 2, "should find two components")
+    lu.assertEquals(shapes[1], "a,b,c")
+    lu.assertEquals(shapes[2], "d")
 end
 
 -- A single-node component with a self-loop counts as a cycle component.
 local function test_tarjan_self_loop_is_cyclic()
     local edges = { { from = "a", to = "a" } }
     local components = layout.strongly_connected_components({ "a" }, edges)
-    _assert_eq(#components, 1, "self-loop node stays one component")
-    _assert_eq(#components[1], 1)
+    lu.assertEquals(#components, 1, "self-loop node stays one component")
+    lu.assertEquals(#components[1], 1)
     _assert_true(layout.cyclic_component(components[1], edges), "self-loop component is cyclic")
 end
 
@@ -63,7 +63,7 @@ end
 local function test_acyclic_components_not_cyclic()
     local edges = { { from = "a", to = "b" } }
     local components = layout.strongly_connected_components({ "a", "b" }, edges)
-    _assert_eq(#components, 2, "DAG yields singleton components")
+    lu.assertEquals(#components, 2, "DAG yields singleton components")
     for _, component in ipairs(components) do
         _assert_true(not layout.cyclic_component(component, edges), "singleton without self-loop is acyclic")
     end
@@ -76,8 +76,8 @@ local function test_greedy_order_sources_first()
         { from = "a", to = "b" },
         { from = "b", to = "a" },
     })
-    _assert_eq(#order, 3)
-    _assert_eq(order[1], "s", "source should be placed leftmost")
+    lu.assertEquals(#order, 3)
+    lu.assertEquals(order[1], "s", "source should be placed leftmost")
 end
 
 -- Greedy order, sink branch: with no source available, the sink goes right.
@@ -87,8 +87,8 @@ local function test_greedy_order_sinks_go_right()
         { from = "b", to = "a" },
         { from = "b", to = "t" },
     })
-    _assert_eq(#order, 3)
-    _assert_eq(order[3], "t", "sink should be placed rightmost")
+    lu.assertEquals(#order, 3)
+    lu.assertEquals(order[3], "t", "sink should be placed rightmost")
 end
 
 -- Greedy order, degree-difference branch: no source and no sink, so the node
@@ -100,7 +100,7 @@ local function test_greedy_order_max_degree_diff_goes_left()
         { from = "b", to = "c" },
         { from = "c", to = "a" },
     })
-    _assert_eq(order[1], "a", "largest out-in difference should be placed leftmost")
+    lu.assertEquals(order[1], "a", "largest out-in difference should be placed leftmost")
 end
 
 -- Greedy order, degree-difference tie: equal differences fall back to the
@@ -111,7 +111,7 @@ local function test_greedy_order_tie_prefers_largest_name()
         { from = "b", to = "c" },
         { from = "c", to = "a" },
     })
-    _assert_eq(order[1], "c", "tied differences should pick the largest name")
+    lu.assertEquals(order[1], "c", "tied differences should pick the largest name")
 end
 
 -- Small components (<= 8 nodes, <= 12 internal edges) use exact enumeration:
@@ -139,9 +139,9 @@ local function test_exact_feedback_edges_minimal_double_cycle()
         { from = "c", to = "a" },
         { from = "c", to = "b" },
     })
-    _assert_eq(#feedback, 1, "one edge breaks both cycles")
-    _assert_eq(feedback[1].from, "b")
-    _assert_eq(feedback[1].to, "c")
+    lu.assertEquals(#feedback, 1, "one edge breaks both cycles")
+    lu.assertEquals(feedback[1].from, "b")
+    lu.assertEquals(feedback[1].to, "c")
 end
 
 -- exact_feedback_edges on a DAG removes nothing (the k = 0 subset wins).
@@ -149,7 +149,7 @@ local function test_exact_feedback_edges_empty_on_dag()
     local feedback = layout.exact_feedback_edges({ "a", "b" }, {
         { from = "a", to = "b" },
     })
-    _assert_eq(#feedback, 0, "DAG needs no feedback edges")
+    lu.assertEquals(#feedback, 0, "DAG needs no feedback edges")
 end
 
 -- Boundary: exactly 8 nodes and 12 internal edges still qualifies for exact
@@ -176,7 +176,7 @@ local function test_feedback_edges_exact_at_size_boundary()
     for _ in pairs(feedback) do
         count = count + 1
     end
-    _assert_eq(count, 1, "single-cycle component yields the minimum one-edge set")
+    lu.assertEquals(count, 1, "single-cycle component yields the minimum one-edge set")
     _assert_true(feedback[layout.edge_key("a", "b")], "exact enumeration removes a->b, not greedy's b->c")
 end
 
@@ -215,7 +215,7 @@ local function test_feedback_edges_greedy_beyond_edge_threshold()
     _assert_true(feedback[layout.edge_key("c", "d")], "greedy removes c->d")
     _assert_true(feedback[layout.edge_key("c", "e")], "greedy removes c->e")
     local exact = layout.exact_feedback_edges(node_ids, edges)
-    _assert_eq(#exact, 1, "the exact minimum for the same graph is one edge")
+    lu.assertEquals(#exact, 1, "the exact minimum for the same graph is one edge")
 end
 
 -- exact_feedback_edges returning nil cannot happen for a finite edge list,
@@ -239,7 +239,7 @@ local function test_feedback_edges_nil_exact_falls_back_to_greedy()
     for _ in pairs(result) do
         removed = removed + 1
     end
-    _assert_eq(removed, 1, "greedy fallback still removes one edge from the 3-cycle")
+    lu.assertEquals(removed, 1, "greedy fallback still removes one edge from the 3-cycle")
 end
 
 -- Self-loop is always a feedback edge.
@@ -259,21 +259,21 @@ local function test_shortest_path_bfs_lexicographic()
         { from = "s", to = "t" },
     }
     local path = layout.shortest_path(edges, "s", "t")
-    _assert_eq(table.concat(path, ","), "s,t", "direct edge is the shortest path")
+    lu.assertEquals(table.concat(path, ","), "s,t", "direct edge is the shortest path")
     local detour = layout.shortest_path({
         { from = "s", to = "b" },
         { from = "s", to = "a" },
         { from = "a", to = "t" },
         { from = "b", to = "t" },
     }, "s", "t")
-    _assert_eq(table.concat(detour, ","), "s,a,t", "lexicographically smallest neighbor first")
-    _assert_eq(layout.shortest_path(edges, "t", "s"), nil, "no path returns nil")
+    lu.assertEquals(table.concat(detour, ","), "s,a,t", "lexicographically smallest neighbor first")
+    lu.assertEquals(layout.shortest_path(edges, "t", "s"), nil, "no path returns nil")
 end
 
 -- A self-loop feedback edge closes on itself: a->a.
 local function test_cycle_path_self_loop_closes_on_itself()
     local path = layout.cycle_path_for_feedback_edge({}, { from = "a", to = "a" })
-    _assert_eq(table.concat(path, ","), "a,a")
+    lu.assertEquals(table.concat(path, ","), "a,a")
 end
 
 -- cycle_paths: one closed a->...->a path per feedback edge, built from the
@@ -288,8 +288,8 @@ local function test_cycle_paths_closed_format()
     local assigned = layout.assign_layers(node_ids, edges)
     -- exact enumeration removes a->b; the acyclic remainder routes b->c->a,
     -- closing the cycle as a->b->c->a.
-    _assert_eq(#assigned.cycles, 1, "one feedback edge yields one cycle path")
-    _assert_eq(table.concat(assigned.cycles[1], "->"), "a->b->c->a", "closed cycle format")
+    lu.assertEquals(#assigned.cycles, 1, "one feedback edge yields one cycle path")
+    lu.assertEquals(table.concat(assigned.cycles[1], "->"), "a->b->c->a", "closed cycle format")
 end
 
 -- A DAG has no cycle paths at all.
@@ -297,7 +297,7 @@ local function test_cycle_paths_empty_on_dag()
     local assigned = layout.assign_layers({ "a", "b" }, {
         { from = "a", to = "b" },
     })
-    _assert_eq(#assigned.cycles, 0, "DAG yields no cycle paths")
+    lu.assertEquals(#assigned.cycles, 0, "DAG yields no cycle paths")
 end
 
 -- compute_view exposes the cyclic node set: both ends of a two-node cycle.
@@ -318,9 +318,9 @@ local function test_topological_levels_chain()
         { from = "a", to = "b" },
         { from = "b", to = "c" },
     })
-    _assert_eq(levels["a"], 1)
-    _assert_eq(levels["b"], 2)
-    _assert_eq(levels["c"], 3)
+    lu.assertEquals(levels["a"], 1)
+    lu.assertEquals(levels["b"], 2)
+    lu.assertEquals(levels["c"], 3)
 end
 
 -- Diamond: a node with two parents lands one below the deeper parent.
@@ -331,10 +331,10 @@ local function test_topological_levels_diamond()
         { from = "b", to = "d" },
         { from = "c", to = "d" },
     })
-    _assert_eq(levels["a"], 1)
-    _assert_eq(levels["b"], 2)
-    _assert_eq(levels["c"], 2)
-    _assert_eq(levels["d"], 3)
+    lu.assertEquals(levels["a"], 1)
+    lu.assertEquals(levels["b"], 2)
+    lu.assertEquals(levels["c"], 2)
+    lu.assertEquals(levels["d"], 3)
 end
 
 -- assign_layers groups nodes per level, row = level - 1, modules sorted.
@@ -343,13 +343,13 @@ local function test_assign_layers_groups_sorted()
         { from = "a", to = "c" },
         { from = "b", to = "c" },
     })
-    _assert_eq(#assigned.layers, 2, "expected two layers")
-    _assert_eq(assigned.layers[1].level, 1)
-    _assert_eq(assigned.layers[1].row, 0)
-    _assert_eq(table.concat(assigned.layers[1].modules, ","), "a,b,d", "same-level modules sorted lexicographically")
-    _assert_eq(assigned.layers[2].level, 2)
-    _assert_eq(assigned.layers[2].row, 1)
-    _assert_eq(table.concat(assigned.layers[2].modules, ","), "c")
+    lu.assertEquals(#assigned.layers, 2, "expected two layers")
+    lu.assertEquals(assigned.layers[1].level, 1)
+    lu.assertEquals(assigned.layers[1].row, 0)
+    lu.assertEquals(table.concat(assigned.layers[1].modules, ","), "a,b,d", "same-level modules sorted lexicographically")
+    lu.assertEquals(assigned.layers[2].level, 2)
+    lu.assertEquals(assigned.layers[2].row, 1)
+    lu.assertEquals(table.concat(assigned.layers[2].modules, ","), "c")
 end
 
 -- assign_layers strips feedback edges out of the acyclic remainder.
@@ -362,9 +362,9 @@ local function test_assign_layers_marks_feedback()
     for _ in pairs(assigned.feedback) do
         feedback_count = feedback_count + 1
     end
-    _assert_eq(feedback_count, 1, "two-node cycle yields one feedback edge")
-    _assert_eq(#assigned.acyclic_edges, 1, "acyclic remainder keeps the other edge")
-    _assert_eq(#assigned.edges, 2, "normalized edge list keeps both")
+    lu.assertEquals(feedback_count, 1, "two-node cycle yields one feedback edge")
+    lu.assertEquals(#assigned.acyclic_edges, 1, "acyclic remainder keeps the other edge")
+    lu.assertEquals(#assigned.edges, 2, "normalized edge list keeps both")
 end
 
 -- Coordinates, centered case: two peers fit at the preferred 1.5x spacing
@@ -396,8 +396,8 @@ end
 local function test_compute_view_rect_formula()
     local view = layout.compute_view({ "solo" }, {})
     local entry = view.nodes["solo"]
-    _assert_eq(entry.level, 1)
-    _assert_eq(entry.row, 0)
+    lu.assertEquals(entry.level, 1)
+    lu.assertEquals(entry.row, 0)
     _assert_near(entry.rect.width, 105.6, "rect width = 0.5 * track width")
     _assert_near(entry.rect.height, 70.0, "rect height = 0.5 * layer height")
     _assert_near(entry.rect.y, 42.0, "top row starts at the scene top padding")
@@ -409,8 +409,8 @@ local function test_compute_view_row_spacing()
     local view = layout.compute_view({ "top", "bottom" }, {
         { from = "top", to = "bottom" },
     })
-    _assert_eq(view.nodes["top"].row, 0)
-    _assert_eq(view.nodes["bottom"].row, 1)
+    lu.assertEquals(view.nodes["top"].row, 0)
+    lu.assertEquals(view.nodes["bottom"].row, 1)
     _assert_near(view.nodes["bottom"].rect.y, 42.0 + 70.0 * 1.5, "row spacing = 1.5 * rect height")
 end
 
@@ -422,10 +422,10 @@ local function test_pinned_rows_follow_declared_layers()
         { from = "app", to = "domain" },
         { from = "app", to = "state" },
     }, { pinned_levels = { app = 1, domain = 2, state = 7 } })
-    _assert_eq(view.nodes["app"].row, 0)
-    _assert_eq(view.nodes["domain"].row, 1)
-    _assert_eq(view.nodes["state"].row, 2, "declared 7 dense-ranks to row 2, no empty rows")
-    _assert_eq(view.nodes["state"].level, 7, "level keeps the raw declared value")
+    lu.assertEquals(view.nodes["app"].row, 0)
+    lu.assertEquals(view.nodes["domain"].row, 1)
+    lu.assertEquals(view.nodes["state"].row, 2, "declared 7 dense-ranks to row 2, no empty rows")
+    lu.assertEquals(view.nodes["state"].level, 7, "level keeps the raw declared value")
     _assert_near(view.nodes["state"].rect.y, 42.0 + 2 * 70.0 * 1.5, "row 2 y from the row index")
 end
 
@@ -435,8 +435,8 @@ local function test_pinned_marks_direction_violation()
     local view = layout.compute_view({ "app", "ui" }, {
         { from = "ui", to = "app" },
     }, { pinned_levels = { app = 1, ui = 3 } })
-    _assert_eq(view.nodes["app"].row, 0, "app stays pinned on top despite the upward edge")
-    _assert_eq(view.nodes["ui"].row, 1)
+    lu.assertEquals(view.nodes["app"].row, 0, "app stays pinned on top despite the upward edge")
+    lu.assertEquals(view.nodes["ui"].row, 1)
     _assert_true(view.direction_violations[layout.edge_key("ui", "app")],
         "ui->app goes upward against the declared layers")
     _assert_true(next(view.feedback) == nil, "a lone upward edge is no cycle, so no feedback edge")
@@ -454,10 +454,10 @@ local function test_pinned_keeps_cycle_break_semantics()
     for _ in pairs(view.feedback) do
         feedback_count = feedback_count + 1
     end
-    _assert_eq(feedback_count, 1, "two-node cycle still yields one feedback edge")
-    _assert_eq(#view.cycles, 1, "cycle path reporting is unchanged")
-    _assert_eq(view.nodes["a"].row, 0, "rows follow the declaration, not the feedback choice")
-    _assert_eq(view.nodes["b"].row, 1)
+    lu.assertEquals(feedback_count, 1, "two-node cycle still yields one feedback edge")
+    lu.assertEquals(#view.cycles, 1, "cycle path reporting is unchanged")
+    lu.assertEquals(view.nodes["a"].row, 0, "rows follow the declaration, not the feedback choice")
+    lu.assertEquals(view.nodes["b"].row, 1)
     _assert_true(view.direction_violations[layout.edge_key("b", "a")], "b->a goes upward")
     _assert_true(not view.direction_violations[layout.edge_key("a", "b")], "a->b follows the declaration")
 end
@@ -470,9 +470,9 @@ local function test_pinned_undeclared_fall_below()
         { from = "x", to = "y" },
         { from = "y", to = "app" },
     }, { pinned_levels = { app = 1 } })
-    _assert_eq(view.nodes["app"].row, 0)
-    _assert_eq(view.nodes["x"].row, 1, "undeclared topological level 1 lands right below the pinned block")
-    _assert_eq(view.nodes["y"].row, 2)
+    lu.assertEquals(view.nodes["app"].row, 0)
+    lu.assertEquals(view.nodes["x"].row, 1, "undeclared topological level 1 lands right below the pinned block")
+    lu.assertEquals(view.nodes["y"].row, 2)
     _assert_true(next(view.direction_violations) == nil,
         "an undeclared endpoint never yields a direction violation")
 end
@@ -486,8 +486,8 @@ local function test_pinned_empty_map_falls_back_to_topological()
     local pinned_view = layout.compute_view({ "a", "b" }, {
         { from = "a", to = "b" },
     }, { pinned_levels = {} })
-    _assert_eq(pinned_view.nodes["a"].row, default_view.nodes["a"].row)
-    _assert_eq(pinned_view.nodes["b"].row, default_view.nodes["b"].row)
+    lu.assertEquals(pinned_view.nodes["a"].row, default_view.nodes["a"].row)
+    lu.assertEquals(pinned_view.nodes["b"].row, default_view.nodes["b"].row)
     _assert_true(next(default_view.direction_violations) == nil, "default mode has no violations")
     _assert_true(next(pinned_view.direction_violations) == nil, "no declaration means no violations")
 end
@@ -522,26 +522,26 @@ local function test_analyzer_pinned_layers_end_to_end()
         if architecture == nil then
             error(analyze_err)
         end
-        _assert_eq(architecture.pinned_layers, true, "top-level flag records the mode")
+        lu.assertEquals(architecture.pinned_layers, true, "top-level flag records the mode")
 
         local root_view = architecture.views["root"]
         local node_by_id = {}
         for _, node in ipairs(root_view.nodes) do
             node_by_id[node.id] = node
         end
-        _assert_eq(node_by_id["app"].component_layer, 1, "node carries its declared layer")
-        _assert_eq(node_by_id["ui"].component_layer, 3)
-        _assert_eq(node_by_id["app"].layer, 0, "app pinned on top despite ui depending on it")
-        _assert_eq(node_by_id["ui"].layer, 1)
-        _assert_eq(#root_view.display_edges, 1)
-        _assert_eq(root_view.display_edges[1].direction_violation, true, "ui->app is an upward edge")
-        _assert_eq(root_view.display_edges[1].cycle_break, false, "no cycle, so no cycle_break")
+        lu.assertEquals(node_by_id["app"].component_layer, 1, "node carries its declared layer")
+        lu.assertEquals(node_by_id["ui"].component_layer, 3)
+        lu.assertEquals(node_by_id["app"].layer, 0, "app pinned on top despite ui depending on it")
+        lu.assertEquals(node_by_id["ui"].layer, 1)
+        lu.assertEquals(#root_view.display_edges, 1)
+        lu.assertEquals(root_view.display_edges[1].direction_violation, true, "ui->app is an upward edge")
+        lu.assertEquals(root_view.display_edges[1].cycle_break, false, "no cycle, so no cycle_break")
         -- ADR 0039 D2: layer is now the gate's fact source, so the same upward
         -- edge that the layout paints as a direction_violation ALSO fails the
         -- check as a layer_violation. This is independent of the pinned
         -- presentation switch (the layer gate reads declared layers, not the
         -- switch); see tests/test_contract.lua for the full violation contract.
-        _assert_eq(architecture.check.ok, false, "an upward edge against declared layers fails the check")
+        lu.assertEquals(architecture.check.ok, false, "an upward edge against declared layers fails the check")
         local layer_violation
         for _, violation in ipairs(architecture.check.violations) do
             if violation.kind == "layer_violation" then
@@ -549,8 +549,8 @@ local function test_analyzer_pinned_layers_end_to_end()
             end
         end
         _assert_true(layer_violation ~= nil, "ui(3)->app(1) must be reported as a layer_violation")
-        _assert_eq(layer_violation.from, "src.ui", "layer_violation names the lower-layer origin")
-        _assert_eq(layer_violation.to, "src.app", "layer_violation names the higher-layer target")
+        lu.assertEquals(layer_violation.from, "src.ui", "layer_violation names the lower-layer origin")
+        lu.assertEquals(layer_violation.to, "src.app", "layer_violation names the higher-layer target")
 
         -- Same project, switch off: topological rows (app below its dependent)
         -- and no direction_violation field anywhere.
@@ -560,14 +560,14 @@ local function test_analyzer_pinned_layers_end_to_end()
         if plain == nil then
             error(plain_err)
         end
-        _assert_eq(plain.pinned_layers, nil, "flag key is absent when the mode is off")
+        lu.assertEquals(plain.pinned_layers, nil, "flag key is absent when the mode is off")
         local plain_nodes = {}
         for _, node in ipairs(plain.views["root"].nodes) do
             plain_nodes[node.id] = node
         end
-        _assert_eq(plain_nodes["ui"].layer, 0, "topological mode puts the dependent on top")
-        _assert_eq(plain_nodes["app"].layer, 1)
-        _assert_eq(plain.views["root"].display_edges[1].direction_violation, nil,
+        lu.assertEquals(plain_nodes["ui"].layer, 0, "topological mode puts the dependent on top")
+        lu.assertEquals(plain_nodes["app"].layer, 1)
+        lu.assertEquals(plain.views["root"].display_edges[1].direction_violation, nil,
             "no direction_violation field without the mode")
 
         -- CLI/API flag alone (config switch off) also enables the mode.
@@ -575,12 +575,12 @@ local function test_analyzer_pinned_layers_end_to_end()
         if flagged == nil then
             error(flagged_err)
         end
-        _assert_eq(flagged.pinned_layers, true, "API opt-in works without the config switch")
+        lu.assertEquals(flagged.pinned_layers, true, "API opt-in works without the config switch")
         local flagged_nodes = {}
         for _, node in ipairs(flagged.views["root"].nodes) do
             flagged_nodes[node.id] = node
         end
-        _assert_eq(flagged_nodes["app"].layer, 0, "API opt-in pins the rows")
+        lu.assertEquals(flagged_nodes["app"].layer, 0, "API opt-in pins the rows")
     end)
 end
 
@@ -611,44 +611,44 @@ local function test_analyzer_wires_layout_and_cycle_break()
 
         local root_view = architecture.views["root"]
         _assert_true(root_view ~= nil, "root view should exist")
-        _assert_eq(#root_view.nodes, 2, "root view should have two nodes")
-        _assert_eq(#root_view.display_edges, 2, "root view should have two edges")
-        _assert_eq(root_view.edges, nil, "contract v2 drops the edges/display_edges duplicate alias")
+        lu.assertEquals(#root_view.nodes, 2, "root view should have two nodes")
+        lu.assertEquals(#root_view.display_edges, 2, "root view should have two edges")
+        lu.assertEquals(root_view.edges, nil, "contract v2 drops the edges/display_edges duplicate alias")
 
         local node_by_id = {}
         for _, node in ipairs(root_view.nodes) do
             node_by_id[node.id] = node
-            _assert_eq(type(node.layer), "number", "node.layer should be a layout row")
-            _assert_eq(type(node.rect), "table", "node.rect should come from the layout engine")
+            lu.assertEquals(type(node.layer), "number", "node.layer should be a layout row")
+            lu.assertEquals(type(node.rect), "table", "node.rect should come from the layout engine")
             _assert_near(node.rect.width, 105.6, "rect width from layout engine")
             _assert_near(node.rect.height, 70.0, "rect height from layout engine")
         end
         -- exact enumeration removes a->b (the first single-edge subset that
         -- leaves a DAG), so b sits on top.
-        _assert_eq(node_by_id["b"].layer, 0, "b should land on the top row")
-        _assert_eq(node_by_id["a"].layer, 1, "a should land one row below")
+        lu.assertEquals(node_by_id["b"].layer, 0, "b should land on the top row")
+        lu.assertEquals(node_by_id["a"].layer, 1, "a should land one row below")
         _assert_near(node_by_id["b"].rect.y, 42.0, "top row y")
         _assert_near(node_by_id["a"].rect.y, 42.0 + 70.0 * 1.5, "second row y")
 
         local break_count = 0
         for _, edge in ipairs(root_view.display_edges) do
-            _assert_eq(type(edge.cycle_break), "boolean", "edge.cycle_break should be boolean")
-            _assert_eq(edge.arrowhead, nil, "contract v2 drops the dead arrowhead field")
-            _assert_eq(edge.route_points, nil, "contract v2 drops the dead route_points field")
+            lu.assertEquals(type(edge.cycle_break), "boolean", "edge.cycle_break should be boolean")
+            lu.assertEquals(edge.arrowhead, nil, "contract v2 drops the dead arrowhead field")
+            lu.assertEquals(edge.route_points, nil, "contract v2 drops the dead route_points field")
             if edge.cycle_break then
                 break_count = break_count + 1
-                _assert_eq(edge.from, "a", "a->b is the first exact single-edge subset leaving a DAG")
-                _assert_eq(edge.to, "b")
+                lu.assertEquals(edge.from, "a", "a->b is the first exact single-edge subset leaving a DAG")
+                lu.assertEquals(edge.to, "b")
             end
         end
-        _assert_eq(break_count, 1, "exactly one edge should be marked cycle_break")
+        lu.assertEquals(break_count, 1, "exactly one edge should be marked cycle_break")
 
         -- Cycle readability fields are really filled (no constant false).
         _assert_true(node_by_id["a"].cycle, "a sits in the cycle component")
         _assert_true(node_by_id["b"].cycle, "b sits in the cycle component")
-        _assert_eq(node_by_id["a"].has_cycle_subtree, false, "no subviews means no subtree cycle")
-        _assert_eq(#root_view.cycle_lines, 1, "root view lists its own cycle")
-        _assert_eq(root_view.cycle_lines[1], "a->b->a", "closed cycle line format")
+        lu.assertEquals(node_by_id["a"].has_cycle_subtree, false, "no subviews means no subtree cycle")
+        lu.assertEquals(#root_view.cycle_lines, 1, "root view lists its own cycle")
+        lu.assertEquals(root_view.cycle_lines[1], "a->b->a", "closed cycle line format")
     end)
 end
 
@@ -686,9 +686,9 @@ local function test_analyzer_fills_has_cycle_subtree()
         for _, node in ipairs(root_view.nodes) do
             root_node_by_id[node.id] = node
         end
-        _assert_eq(root_node_by_id["sub"].cycle, false, "sub is not in a root-level cycle")
+        lu.assertEquals(root_node_by_id["sub"].cycle, false, "sub is not in a root-level cycle")
         _assert_true(root_node_by_id["sub"].has_cycle_subtree, "sub subtree contains the x<->y cycle")
-        _assert_eq(root_node_by_id["top"].has_cycle_subtree, false, "top has no subtree cycle")
+        lu.assertEquals(root_node_by_id["top"].has_cycle_subtree, false, "top has no subtree cycle")
 
         local sub_node_by_id = {}
         for _, node in ipairs(sub_view.nodes) do
@@ -699,10 +699,10 @@ local function test_analyzer_fills_has_cycle_subtree()
 
         -- The root view aggregates descendant cycle lines (full names carry
         -- the namespace prefix); the sub view lists only its own.
-        _assert_eq(#sub_view.cycle_lines, 1)
-        _assert_eq(sub_view.cycle_lines[1], "sub.x->sub.y->sub.x", "sub view cycle line")
-        _assert_eq(#root_view.cycle_lines, 1, "root view aggregates the descendant cycle")
-        _assert_eq(root_view.cycle_lines[1], "sub.x->sub.y->sub.x")
+        lu.assertEquals(#sub_view.cycle_lines, 1)
+        lu.assertEquals(sub_view.cycle_lines[1], "sub.x->sub.y->sub.x", "sub view cycle line")
+        lu.assertEquals(#root_view.cycle_lines, 1, "root view aggregates the descendant cycle")
+        lu.assertEquals(root_view.cycle_lines[1], "sub.x->sub.y->sub.x")
     end)
 end
 
