@@ -88,24 +88,30 @@ local function _call_service(service_fn, options)
   return result
 end
 
-local function _run_check(options)
-  local result = _call_service(service.check, options)
-  local check = result.check or {}
-  -- Waived projection cycles (arch_view #3) are reported for visibility but
-  -- do not fail the gate; unwaived ones arrive as projection_cycle violations
-  -- below.
+-- Waived projection cycles (arch_view #3) are reported for visibility but do
+-- not fail the gate; unwaived ones arrive as projection_cycle violations in
+-- _run_check. write picks the stream (stdout on a passing check, stderr on a
+-- failing one) so the whole report stays on one stream per outcome.
+local function _write_waived_cycles(check, write)
   for _, entry in ipairs(check.projection_cycles or {}) do
     if entry.waived then
       local reason = entry.reason ~= nil and (" (" .. tostring(entry.reason) .. ")") or ""
-      print("  " .. _text("投影循环(已豁免)", "projection_cycle (waived)") .. " "
+      write("  " .. _text("投影循环(已豁免)", "projection_cycle (waived)") .. " "
         .. tostring(entry.view) .. " " .. tostring(entry.cycle) .. reason)
     end
   end
+end
+
+local function _run_check(options)
+  local result = _call_service(service.check, options)
+  local check = result.check or {}
   if check.ok then
+    _write_waived_cycles(check, function(line) print(line) end)
     print(_text("arch_view 检查通过", "arch_view check ok"))
     return true
   end
   io.stderr:write(_text("arch_view 检查失败", "arch_view check failed"), "\n")
+  _write_waived_cycles(check, function(line) io.stderr:write(line, "\n") end)
   for _, violation in ipairs(check.violations or {}) do
     if violation.kind == "forbidden_dependency" then
       io.stderr:write("  ", _text("禁止依赖", "forbidden_dependency"), " [", tostring(violation.rule), "] ", tostring(violation.from), " -> ", tostring(violation.to), "\n")
