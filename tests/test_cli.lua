@@ -2,6 +2,8 @@ local cli = require("arch_view.cli")
 local lu = require("luaunit")
 local common = require("arch_view.runtime.common")
 
+local helpers = dofile("tests/helpers.lua")
+
 local tmp_root = common.join_path(common.system_tmp_dir(), "arch_view_test_cli")
 
 local function _write_file(path, content)
@@ -81,6 +83,40 @@ local function test_cli_check_command()
     end)
 end
 
+-- Issue #3: check fails closed on a projection cycle — cli.run returns false
+-- so the host wrapper exits non-zero.
+local function test_cli_check_fails_on_projection_cycle()
+    _with_clean_tmp(function()
+        local project_root = common.join_path(tmp_root, "cli_cycle")
+        helpers.write_cycle_project(project_root)
+
+        local result = cli.run({"check"}, {
+            default_project_root = project_root,
+        })
+
+        lu.assertTrue(result == false, "cli check should fail on an unwaived projection cycle")
+    end)
+end
+
+-- Issue #3: a matching allowed_cycles waiver turns the same project green.
+local function test_cli_check_passes_with_waived_cycle()
+    _with_clean_tmp(function()
+        local project_root = common.join_path(tmp_root, "cli_cycle_waived")
+        helpers.write_cycle_project(project_root, [[
+  "allowed_cycles": [
+    {"view": "root", "nodes": ["alpha", "beta"], "reason": "accepted pattern"}
+  ]
+]]
+        )
+
+        local result = cli.run({"check"}, {
+            default_project_root = project_root,
+        })
+
+        lu.assertTrue(result == true, "cli check should pass when every cycle is waived")
+    end)
+end
+
 local function test_cli_viewer_command()
     _with_clean_tmp(function()
         local project_root = common.join_path(tmp_root, "cli_viewer")
@@ -152,6 +188,8 @@ return {
     test_cli_scan_command = test_cli_scan_command,
     test_cli_scan_pinned_layers_flag = test_cli_scan_pinned_layers_flag,
     test_cli_check_command = test_cli_check_command,
+    test_cli_check_fails_on_projection_cycle = test_cli_check_fails_on_projection_cycle,
+    test_cli_check_passes_with_waived_cycle = test_cli_check_passes_with_waived_cycle,
     test_cli_viewer_command = test_cli_viewer_command,
     test_cli_respects_project_root = test_cli_respects_project_root,
     test_cli_viewer_respects_project_root_for_relative_out_dir = test_cli_viewer_respects_project_root_for_relative_out_dir,

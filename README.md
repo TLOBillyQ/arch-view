@@ -66,10 +66,16 @@ Hosts typically wrap this in a small script; see the next section.
    os.exit(ok and 0 or 1)
    ```
 
+   The `os.exit(ok and 0 or 1)` line is part of the contract, not boilerplate:
+   `cli.run` (and `arch_view.run_cli`) **returns** `true`/`false` and never
+   exits the process itself — the library stays embeddable, and the host owns
+   the exit code. A wrapper that ignores the return value turns a failing
+   gate silently green, so always convert `false` into a non-zero exit.
+
 4. Run it from the project root:
 
    ```sh
-   lua tools/arch.lua check                                  # forbidden-dependency check
+   lua tools/arch.lua check                                  # gate check (forbidden deps, layers, projection cycles)
    lua tools/arch.lua scan --out .arch_view/architecture.json
    lua tools/arch.lua viewer --out-dir .arch_view/viewer --open
    ```
@@ -104,7 +110,8 @@ Available entrypoints:
 - `check(opts)`
 - `write_scan(opts)`
 - `export_viewer(opts)`
-- `run_cli(args, opts)`
+- `run_cli(args, opts)` — returns `true`/`false`, never calls `os.exit`;
+  the caller owns the process exit code (see the wrapper contract above)
 
 ## Config
 
@@ -115,9 +122,36 @@ Available entrypoints:
     { "name": "demo", "match": ["^src%.demo$", "^src%.demo%..+"], "component": "demo" }
   ],
   "abstract_rules": [],
-  "forbidden_dependency_rules": []
+  "forbidden_dependency_rules": [],
+  "allowed_cycles": [
+    { "view": "root", "nodes": ["registry", "plugin"], "reason": "self-registration pattern" }
+  ]
 }
 ```
+
+### Projection-cycle gate (issue #3)
+
+`check` fails closed on projection cycles: any dependency cycle visible in a
+view (the same cycles the viewer renders red, from the same layout run) makes
+`check.ok` false and the CLI exit non-zero. The gate facts live in
+`check.projection_cycles` — one entry per cycle, owned by exactly one view:
+
+- `view` — the owning view key (`"root"` or a dotted namespace path);
+- `cycle` — the closed `"a->b->a"` full-name line, the string the viewer
+  shows;
+- `nodes` — the participant names in path order;
+- `waived` — boolean; `reason` is added when a waiver matched.
+
+Every unwaived cycle also appears once in `check.violations` as
+`kind = "projection_cycle"` with its `view` and `cycle`.
+
+`allowed_cycles` is the waiver list for cycles a project has ruled acceptable
+(e.g. a registry self-registration pattern). An entry matches a reported cycle
+by **exact view key plus participant-set equality** on `nodes` — the traversal
+order of the cycle line does not matter. A matched cycle is reported with
+`waived = true` (and its `reason`) and does not fail the gate; an entry that
+matches nothing has no effect. `allowed_cycles` is optional; without it every
+cycle fails.
 
 ### Layer gate (`layer` / `substrate`, ADR 0039 D2)
 
@@ -182,8 +216,11 @@ The output tests are split into two layers with distinct jobs (ADR 0039 D4):
   assertions on the output *schema* (field presence, types, invariants:
   `schema_version` is an integer; `check.ok`/`check.violations` shape; every
   violation carries a `kind`, `forbidden_dependency` carries `rule`/`from`/`to`,
-  `unclassified_module` carries `module_id`; pinned-mode view edges carry a
-  boolean `direction_violation`; view edges carry a boolean `cycle_break`).
+  `unclassified_module` carries `module_id`; `check.projection_cycles` lists
+  every projection cycle with `view`/`cycle`/`nodes`/`waived` and unwaived
+  cycles surface as `projection_cycle` violations; pinned-mode view edges
+  carry a boolean `direction_violation`; view edges carry a boolean
+  `cycle_break`).
   This is the **authoritative, human-readable statement of the output
   contract** — read it to know what the schema guarantees, and break any field
   to see it go red without a golden rewrite. It runs under `tests/run.lua`.

@@ -134,4 +134,29 @@ function helpers.generate_outputs(root, out_dir)
   }
 end
 
+-- Write a project whose ONLY gate fact is a projection cycle (arch_view #3):
+-- two modules that require each other. Everything is classified and no
+-- forbidden rule fires. config_extra is spliced into the config object
+-- (e.g. an "allowed_cycles" array) to exercise the waiver mechanism.
+function helpers.write_cycle_project(project_root, config_extra)
+  local common = require("arch_view.runtime.common")
+  assert(common.ensure_dir(project_root))
+  assert(common.ensure_dir(common.join_path(project_root, "src")))
+  local config = [[
+{
+  "source_roots": ["src"],
+  "component_rules": [
+    {"name": "core", "match": ["^src$", "^src%..+"], "component": "core"}
+  ]
+]]
+  if config_extra ~= nil then
+    config = config .. ",\n" .. config_extra .. "\n"
+  end
+  config = config .. "}\n"
+  assert(common.write_file(common.join_path(project_root, "arch_view.config.json"), config))
+  assert(common.write_file(common.join_path(project_root, "src/init.lua"), "return {}"))
+  assert(common.write_file(common.join_path(project_root, "src/alpha.lua"), 'local beta = require("src.beta")\nreturn {}'))
+  assert(common.write_file(common.join_path(project_root, "src/beta.lua"), 'local alpha = require("src.alpha")\nreturn {}'))
+end
+
 return helpers
