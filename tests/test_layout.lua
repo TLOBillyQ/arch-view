@@ -22,6 +22,16 @@ local function _assert_true(value, message)
     end
 end
 
+-- Index view nodes by id so assertions can look up a node by name. The
+-- by-id lookup shape is repeated throughout the file, so it lives here.
+local function _index_by_id(nodes)
+    local by_id = {}
+    for _, node in ipairs(nodes) do
+        by_id[node.id] = node
+    end
+    return by_id
+end
+
 local function _sorted_components(components)
     local out = {}
     for _, component in ipairs(components) do
@@ -492,6 +502,24 @@ local function test_pinned_empty_map_falls_back_to_topological()
     _assert_true(next(pinned_view.direction_violations) == nil, "no declaration means no violations")
 end
 
+-- Shared fixture for the layered project used by the pinned-mode tests: app
+-- declares layer 1, ui layer 3. extra is appended after the component_rules
+-- array (e.g. the pinned_layers switch); subview_match widens the ui match
+-- to its subtree for the component-internal-view scope test.
+local function config_body(extra, subview_match)
+    local ui_match = '["^src%.ui$"]'
+    if subview_match then
+        ui_match = '["^src%.ui$", "^src%.ui%..+"]'
+    end
+    return [==[
+{
+  "source_roots": ["src"],
+  "component_rules": [
+    {"name": "app", "match": ["^src%.app$"], "component": "app", "layer": 1},
+    {"name": "ui", "match": ]==] .. ui_match .. [==[, "component": "ui", "layer": 3}
+  ]]==] .. extra .. "\n}\n"
+end
+
 -- End-to-end pinned mode: config declares component layers plus the global
 -- switch; the analyzer pins rows by declaration and marks the upward edge
 -- with direction_violation = true. The same project without the switch keeps
@@ -503,15 +531,6 @@ local function test_analyzer_pinned_layers_end_to_end()
     helpers.with_clean_tmp("arch_view_test_pinned", function(tmp_root)
         local project_root = common.join_path(tmp_root, "pinned_project")
         assert(common.ensure_dir(common.join_path(project_root, "src")))
-        local function config_body(extra)
-            return [==[
-{
-  "source_roots": ["src"],
-  "component_rules": [
-    {"name": "app", "match": ["^src%.app$"], "component": "app", "layer": 1},
-    {"name": "ui", "match": ["^src%.ui$"], "component": "ui", "layer": 3}
-  ]]==] .. extra .. "\n}\n"
-        end
         assert(common.write_file(common.join_path(project_root, "arch_view.config.json"),
             config_body(',\n  "pinned_layers": true')))
         assert(common.write_file(common.join_path(project_root, "src/app.lua"), "return {}\n"))
@@ -525,10 +544,7 @@ local function test_analyzer_pinned_layers_end_to_end()
         lu.assertEquals(architecture.pinned_layers, true, "top-level flag records the mode")
 
         local root_view = architecture.views["root"]
-        local node_by_id = {}
-        for _, node in ipairs(root_view.nodes) do
-            node_by_id[node.id] = node
-        end
+        local node_by_id = _index_by_id(root_view.nodes)
         lu.assertEquals(node_by_id["app"].component_layer, 1, "node carries its declared layer")
         lu.assertEquals(node_by_id["ui"].component_layer, 3)
         lu.assertEquals(node_by_id["app"].layer, 0, "app pinned on top despite ui depending on it")
@@ -561,10 +577,7 @@ local function test_analyzer_pinned_layers_end_to_end()
             error(plain_err)
         end
         lu.assertEquals(plain.pinned_layers, nil, "flag key is absent when the mode is off")
-        local plain_nodes = {}
-        for _, node in ipairs(plain.views["root"].nodes) do
-            plain_nodes[node.id] = node
-        end
+        local plain_nodes = _index_by_id(plain.views["root"].nodes)
         lu.assertEquals(plain_nodes["ui"].layer, 0, "topological mode puts the dependent on top")
         lu.assertEquals(plain_nodes["app"].layer, 1)
         lu.assertEquals(plain.views["root"].display_edges[1].direction_violation, nil,
@@ -576,10 +589,7 @@ local function test_analyzer_pinned_layers_end_to_end()
             error(flagged_err)
         end
         lu.assertEquals(flagged.pinned_layers, true, "API opt-in works without the config switch")
-        local flagged_nodes = {}
-        for _, node in ipairs(flagged.views["root"].nodes) do
-            flagged_nodes[node.id] = node
-        end
+        local flagged_nodes = _index_by_id(flagged.views["root"].nodes)
         lu.assertEquals(flagged_nodes["app"].layer, 0, "API opt-in pins the rows")
     end)
 end
@@ -598,16 +608,8 @@ local function test_analyzer_pinned_scope_root_only()
     helpers.with_clean_tmp("arch_view_test_pinned_scope", function(tmp_root)
         local project_root = common.join_path(tmp_root, "pinned_scope_project")
         assert(common.ensure_dir(common.join_path(project_root, "src/ui")))
-        assert(common.write_file(common.join_path(project_root, "arch_view.config.json"), [==[
-{
-  "source_roots": ["src"],
-  "component_rules": [
-    {"name": "app", "match": ["^src%.app$"], "component": "app", "layer": 1},
-    {"name": "ui", "match": ["^src%.ui$", "^src%.ui%..+"], "component": "ui", "layer": 3}
-  ],
-  "pinned_layers": true
-}
-]==]))
+        assert(common.write_file(common.join_path(project_root, "arch_view.config.json"),
+            config_body(',\n  "pinned_layers": true', true)))
         assert(common.write_file(common.join_path(project_root, "src/app.lua"), "return {}\n"))
         assert(common.write_file(common.join_path(project_root, "src/ui.lua"),
             'local app = require("src.app")\nreturn {}\n'))
@@ -623,10 +625,7 @@ local function test_analyzer_pinned_scope_root_only()
 
         -- Root view: unchanged pinned behavior — app pinned on top by
         -- declaration despite the upward ui->app edge, which is flagged.
-        local root_nodes = {}
-        for _, node in ipairs(architecture.views["root"].nodes) do
-            root_nodes[node.id] = node
-        end
+        local root_nodes = _index_by_id(architecture.views["root"].nodes)
         lu.assertEquals(root_nodes["app"].layer, 0, "root still pins app on top by declaration")
         lu.assertEquals(root_nodes["ui"].layer, 1, "root still pins ui to its declared row")
         lu.assertEquals(architecture.views["root"].display_edges[1].direction_violation, true,
@@ -638,10 +637,7 @@ local function test_analyzer_pinned_scope_root_only()
         -- carries no direction_violation field at all.
         local ui_view = architecture.views["ui"]
         _assert_true(ui_view ~= nil, "the component-internal ui view should exist")
-        local ui_nodes = {}
-        for _, node in ipairs(ui_view.nodes) do
-            ui_nodes[node.id] = node
-        end
+        local ui_nodes = _index_by_id(ui_view.nodes)
         lu.assertEquals(ui_nodes["panel"].component_layer, 3, "subview keeps its inherited declaration")
         lu.assertEquals(ui_nodes["model"].component_layer, 3)
         lu.assertEquals(ui_nodes["panel"].layer, 0, "internal view lays out topologically: dependent on top")
@@ -754,18 +750,12 @@ local function test_analyzer_fills_has_cycle_subtree()
         local sub_view = architecture.views["sub"]
         _assert_true(root_view ~= nil and sub_view ~= nil, "root and sub views should exist")
 
-        local root_node_by_id = {}
-        for _, node in ipairs(root_view.nodes) do
-            root_node_by_id[node.id] = node
-        end
+        local root_node_by_id = _index_by_id(root_view.nodes)
         lu.assertEquals(root_node_by_id["sub"].cycle, false, "sub is not in a root-level cycle")
         _assert_true(root_node_by_id["sub"].has_cycle_subtree, "sub subtree contains the x<->y cycle")
         lu.assertEquals(root_node_by_id["top"].has_cycle_subtree, false, "top has no subtree cycle")
 
-        local sub_node_by_id = {}
-        for _, node in ipairs(sub_view.nodes) do
-            sub_node_by_id[node.id] = node
-        end
+        local sub_node_by_id = _index_by_id(sub_view.nodes)
         _assert_true(sub_node_by_id["x"].cycle, "x sits in the sub view cycle")
         _assert_true(sub_node_by_id["y"].cycle, "y sits in the sub view cycle")
 
