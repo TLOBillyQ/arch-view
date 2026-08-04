@@ -79,28 +79,6 @@ local function _write_sample_project(project_root)
     _write_file(common.join_path(project_root, "src/core_module.lua"), 'local init = require("init")\nreturn {}')
 end
 
--- A project whose ONLY gate fact is a projection cycle: two modules that
--- require each other. Everything is classified and no forbidden rule fires.
-local function _write_cycle_project(project_root, config_extra)
-    _mkdir(project_root)
-    _mkdir(common.join_path(project_root, "src"))
-    local config = [[
-{
-  "source_roots": ["src"],
-  "component_rules": [
-    {"name": "core", "match": ["^src$", "^src%..+"], "component": "core"}
-  ]
-]]
-    if config_extra ~= nil then
-        config = config .. ",\n" .. config_extra .. "\n"
-    end
-    config = config .. "}\n"
-    _write_file(common.join_path(project_root, "arch_view.config.json"), config)
-    _write_file(common.join_path(project_root, "src/init.lua"), "return {}")
-    _write_file(common.join_path(project_root, "src/alpha.lua"), 'local beta = require("src.beta")\nreturn {}')
-    _write_file(common.join_path(project_root, "src/beta.lua"), 'local alpha = require("src.alpha")\nreturn {}')
-end
-
 local function _analyze(project_root)
     local architecture, err = arch_view.analyze({ project_root = project_root })
     if architecture == nil then
@@ -123,7 +101,7 @@ end
 local function test_projection_cycle_fails_check()
     _with_clean_tmp(function()
         local project_root = common.join_path(tmp_root, "cycle_project")
-        _write_cycle_project(project_root)
+        helpers.write_cycle_project(project_root)
 
         local architecture = _analyze(project_root)
         local check = architecture.check
@@ -154,7 +132,7 @@ end
 local function test_allowed_cycles_waives_projection_cycle()
     _with_clean_tmp(function()
         local project_root = common.join_path(tmp_root, "waived_cycle_project")
-        _write_cycle_project(project_root, [[
+        helpers.write_cycle_project(project_root, [[
   "allowed_cycles": [
     {"view": "root", "nodes": ["alpha", "beta"], "reason": "accepted pattern"}
   ]
@@ -180,7 +158,7 @@ end
 local function test_unmatched_allowed_cycles_still_fails()
     _with_clean_tmp(function()
         local project_root = common.join_path(tmp_root, "unmatched_waiver_project")
-        _write_cycle_project(project_root, [[
+        helpers.write_cycle_project(project_root, [[
   "allowed_cycles": [
     {"view": "root", "nodes": ["alpha", "gamma"]},
     {"view": "other", "nodes": ["alpha", "beta"]}

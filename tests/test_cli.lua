@@ -2,6 +2,8 @@ local cli = require("arch_view.cli")
 local lu = require("luaunit")
 local common = require("arch_view.runtime.common")
 
+local helpers = dofile("tests/helpers.lua")
+
 local tmp_root = common.join_path(common.system_tmp_dir(), "arch_view_test_cli")
 
 local function _write_file(path, content)
@@ -81,34 +83,12 @@ local function test_cli_check_command()
     end)
 end
 
--- A project whose only gate fact is an alpha<->beta projection cycle
--- (arch_view #3). config_extra is spliced into the config object.
-local function _write_cycle_project(project_root, config_extra)
-    _mkdir(project_root)
-    _mkdir(common.join_path(project_root, "src"))
-    local config = [[
-{
-  "source_roots": ["src"],
-  "component_rules": [
-    {"name": "core", "match": ["^src$", "^src%..+"], "component": "core"}
-  ]
-]]
-    if config_extra ~= nil then
-        config = config .. ",\n" .. config_extra .. "\n"
-    end
-    config = config .. "}\n"
-    _write_file(common.join_path(project_root, "arch_view.config.json"), config)
-    _write_file(common.join_path(project_root, "src/init.lua"), "return {}")
-    _write_file(common.join_path(project_root, "src/alpha.lua"), 'local beta = require("src.beta")\nreturn {}')
-    _write_file(common.join_path(project_root, "src/beta.lua"), 'local alpha = require("src.alpha")\nreturn {}')
-end
-
 -- Issue #3: check fails closed on a projection cycle — cli.run returns false
 -- so the host wrapper exits non-zero.
 local function test_cli_check_fails_on_projection_cycle()
     _with_clean_tmp(function()
         local project_root = common.join_path(tmp_root, "cli_cycle")
-        _write_cycle_project(project_root)
+        helpers.write_cycle_project(project_root)
 
         local result = cli.run({"check"}, {
             default_project_root = project_root,
@@ -122,7 +102,7 @@ end
 local function test_cli_check_passes_with_waived_cycle()
     _with_clean_tmp(function()
         local project_root = common.join_path(tmp_root, "cli_cycle_waived")
-        _write_cycle_project(project_root, [[
+        helpers.write_cycle_project(project_root, [[
   "allowed_cycles": [
     {"view": "root", "nodes": ["alpha", "beta"], "reason": "accepted pattern"}
   ]
