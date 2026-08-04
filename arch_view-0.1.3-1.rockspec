@@ -1,9 +1,9 @@
 rockspec_format = "3.0"
 package = "arch_view"
-version = "0.1.2-1"
+version = "0.1.3-1"
 source = {
    url = "git+http://lzxsvn:3000/qinyuanj/arch_view.git",
-   tag = "v0.1.2",
+   tag = "v0.1.3",
 }
 description = {
    summary = "Static module dependency analyzer for Lua projects",
