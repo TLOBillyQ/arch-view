@@ -66,6 +66,12 @@ Hosts typically wrap this in a small script; see the next section.
    os.exit(ok and 0 or 1)
    ```
 
+   The `os.exit(ok and 0 or 1)` line is part of the contract, not boilerplate:
+   `cli.run` (and `arch_view.run_cli`) **returns** `true`/`false` and never
+   exits the process itself — the library stays embeddable, and the host owns
+   the exit code. A wrapper that ignores the return value turns a failing
+   gate silently green, so always convert `false` into a non-zero exit.
+
 4. Run it from the project root:
 
    ```sh
@@ -104,7 +110,8 @@ Available entrypoints:
 - `check(opts)`
 - `write_scan(opts)`
 - `export_viewer(opts)`
-- `run_cli(args, opts)`
+- `run_cli(args, opts)` — returns `true`/`false`, never calls `os.exit`;
+  the caller owns the process exit code (see the wrapper contract above)
 
 ## Config
 
