@@ -190,6 +190,13 @@ direction are rendered as bold red upward arrows instead of triggering a
 reorder — a review sees "there is a reverse dependency here", not "the
 ordering changed".
 
+The mode is scoped to the **root view** (issue #4) — the component-level view
+whose declared layer order is the fact under review. Component-internal views
+have no declared ordering (every subview inherits the owning component's
+`component_layer`, so pinning would dense-rank them into a single row), so
+they always use the topological layout and their edges omit
+`direction_violation`, exactly as if the mode were off for that view.
+
 - Config: `component_rules` entries take an optional integer `layer`; a
   top-level `"pinned_layers": true` turns the mode on globally. Components
   without a declared layer keep the topological behavior and sink below the
@@ -200,7 +207,7 @@ ordering changed".
   the scan produced.
 - Output: rows use the dense rank of the distinct declared values (gaps in
   the numbering don't create empty rows); `node.component_layer` carries the
-  declaration, every view edge gets `direction_violation` (true = upward
+  declaration, every root view edge gets `direction_violation` (true = upward
   against the declaration), and the top level records `"pinned_layers": true`.
   `cycle_break` semantics are unchanged, and with the mode off the presentation
   output is byte-identical to before. Note the pinned **switch** is presentation
@@ -218,9 +225,10 @@ The output tests are split into two layers with distinct jobs (ADR 0039 D4):
   violation carries a `kind`, `forbidden_dependency` carries `rule`/`from`/`to`,
   `unclassified_module` carries `module_id`; `check.projection_cycles` lists
   every projection cycle with `view`/`cycle`/`nodes`/`waived` and unwaived
-  cycles surface as `projection_cycle` violations; pinned-mode view edges
-  carry a boolean `direction_violation`; view edges carry a boolean
-  `cycle_break`).
+  cycles surface as `projection_cycle` violations; pinned-mode **root** view
+  edges carry a boolean `direction_violation` (component-internal views omit
+  the field — the pinned scope in the section above); view edges carry a
+  boolean `cycle_break`).
   This is the **authoritative, human-readable statement of the output
   contract** — read it to know what the schema guarantees, and break any field
   to see it go red without a golden rewrite. It runs under `tests/run.lua`.
