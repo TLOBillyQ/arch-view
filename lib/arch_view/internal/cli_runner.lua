@@ -91,6 +91,16 @@ end
 local function _run_check(options)
   local result = _call_service(service.check, options)
   local check = result.check or {}
+  -- Waived projection cycles (arch_view #3) are reported for visibility but
+  -- do not fail the gate; unwaived ones arrive as projection_cycle violations
+  -- below.
+  for _, entry in ipairs(check.projection_cycles or {}) do
+    if entry.waived then
+      local reason = entry.reason ~= nil and (" (" .. tostring(entry.reason) .. ")") or ""
+      print("  " .. _text("投影循环(已豁免)", "projection_cycle (waived)") .. " "
+        .. tostring(entry.view) .. " " .. tostring(entry.cycle) .. reason)
+    end
+  end
   if check.ok then
     print(_text("arch_view 检查通过", "arch_view check ok"))
     return true
@@ -104,13 +114,13 @@ local function _run_check(options)
       io.stderr:write("  ", _text("未分类模块", "unclassified_module"), " ", tostring(violation.module_id), "\n")
     elseif violation.kind == "projection_cycle" then
       io.stderr:write("  ", _text("投影循环", "projection_cycle"), " ", tostring(violation.view), "\n")
-      io.stderr:write("    ", tostring(violation.description), "\n")
+      io.stderr:write("    ", tostring(violation.cycle), "\n")
     else
       io.stderr:write("  ", tostring(violation.kind), " ", table.concat(violation.cycle or {}, ", "), "\n")
       io.stderr:write("    ", tostring(violation.description), "\n")
     end
   end
-  os.exit(1)
+  return false
 end
 
 function cli.run(args, opts)

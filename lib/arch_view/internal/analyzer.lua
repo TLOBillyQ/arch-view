@@ -237,7 +237,49 @@ local function _is_layer_upward(from_layer, to_layer)
   return from_layer > to_layer
 end
 
-local function _build_check(graph, modules, config)
+-- A waiver entry from config.allowed_cycles matches a reported cycle by exact
+-- owning view key plus participant-set equality (arch_view #3): the waiver
+-- names WHO is in the accepted cycle, not the (path-order-dependent) exact
+-- traversal, so an equivalent BFS path through the same nodes still matches.
+local function _waiver_matches(entry, waiver)
+  if tostring(waiver.view) ~= entry.view then
+    return false
+  end
+  local waiver_nodes = waiver.nodes or {}
+  if #waiver_nodes ~= #entry.nodes then
+    return false
+  end
+  local participants = {}
+  for _, node in ipairs(entry.nodes) do
+    participants[node] = true
+  end
+  for _, node in ipairs(waiver_nodes) do
+    if not participants[node] then
+      return false
+    end
+  end
+  return true
+end
+
+-- Mark every reported cycle with its waiver verdict: a matching
+-- config.allowed_cycles entry sets waived = true and carries the waiver's
+-- reason over for reporting; everything else is waived = false.
+local function _apply_waivers(projection_cycles, config)
+  for _, entry in ipairs(projection_cycles) do
+    for _, waiver in ipairs((config or {}).allowed_cycles or {}) do
+      if _waiver_matches(entry, waiver) then
+        entry.waived = true
+        entry.reason = waiver.reason
+        break
+      end
+    end
+    if entry.waived ~= true then
+      entry.waived = false
+    end
+  end
+end
+
+local function _build_check(graph, modules, config, projection_cycles)
   local violations = {}
   for _, module_id in ipairs(_sorted_keys(modules)) do
     if modules[module_id].component == nil then
@@ -274,15 +316,25 @@ local function _build_check(graph, modules, config)
       }
     end
   end
+  -- Projection-cycle gate (arch_view #3): cycles come from the same view
+  -- layout the viewer renders (one entry per cycle, owned by exactly one
+  -- view). An unwaived cycle is a projection_cycle violation and fails the
+  -- check; a waived one is still listed in projection_cycles but does not
+  -- violate.
+  _apply_waivers(projection_cycles, config)
+  for _, entry in ipairs(projection_cycles) do
+    if not entry.waived then
+      violations[#violations + 1] = {
+        kind = "projection_cycle",
+        view = entry.view,
+        cycle = entry.cycle,
+      }
+    end
+  end
   return {
     ok = #violations == 0,
     violations = _array(violations),
-    cycles = _array({}),
-    -- Reserved for future per-projection cycle reporting; distinct from the
-    -- deleted top-level same-named empty shell. The cli_runner
-    -- projection_cycle violation branch consumes check.violations entries,
-    -- not this field.
-    projection_cycles = _array({}),
+    projection_cycles = _array(projection_cycles),
   }
 end
 
@@ -505,7 +557,9 @@ end
 -- node pins its row, and every edge additionally gets a direction_violation
 -- boolean (true = upward against the declared layers); the field is absent
 -- entirely when the mode is off, keeping the default output byte-identical.
--- Returns the view's own closed cycle paths as "a->b->c->a" full-name lines.
+-- Returns the view's own cycles as entries { cycle = "a->b->c->a" full-name
+-- line, nodes = participant names in path order (closing repeat dropped) } —
+-- the same layout facts the viewer renders red.
 local function _apply_view_layout(nodes, display_edges, pinned_enabled)
   local node_ids = {}
   for _, node in ipairs(nodes) do
@@ -541,15 +595,26 @@ local function _apply_view_layout(nodes, display_edges, pinned_enabled)
         view_layout.direction_violations[layout.edge_key(edge.from, edge.to)] == true
     end
   end
-  local cycle_lines = {}
+  local cycles = {}
   for _, path in ipairs(view_layout.cycles) do
-    local parts = {}
+    local names = {}
     for _, node_id in ipairs(path) do
-      parts[#parts + 1] = full_name_by_id[node_id] or node_id
+      names[#names + 1] = full_name_by_id[node_id] or node_id
     end
-    cycle_lines[#cycle_lines + 1] = table.concat(parts, "->")
+    local participants = _array({})
+    local seen = {}
+    for index = 1, #names - 1 do
+      if not seen[names[index]] then
+        seen[names[index]] = true
+        participants[#participants + 1] = names[index]
+      end
+    end
+    cycles[#cycles + 1] = {
+      cycle = table.concat(names, "->"),
+      nodes = participants,
+    }
   end
-  return _array(cycle_lines)
+  return _array(cycles)
 end
 
 -- A node's subtree (its own subview plus every deeper view) contains a cycle.
@@ -566,20 +631,34 @@ local function _subtree_has_cycle(full_name, views_with_cycles, view_keys)
   return false
 end
 
+-- Returns the views plus the flat projection_cycles gate list (arch_view #3):
+-- one entry per view-own cycle, in view-key order, each carrying its owning
+-- view key. The viewer's per-view cycle_lines are derived from the same
+-- entries, so the gate and the red rendering can never disagree.
 local function _build_views(modules, graph, dependencies, pinned_enabled)
   local views = {}
+  local projection_cycles = _array({})
   local prefixes = _collect_view_prefixes(modules)
   for _, view_key in ipairs(_sorted_keys(prefixes)) do
     local prefix = prefixes[view_key]
     local nodes, buckets = _build_view_nodes(prefix, modules, dependencies)
     if #nodes > 0 then
       local display_edges = _build_view_edges(prefix, buckets, graph, modules)
-      local own_cycle_lines = _apply_view_layout(nodes, display_edges, pinned_enabled)
+      local own_cycles = _apply_view_layout(nodes, display_edges, pinned_enabled)
+      local own_cycle_lines = {}
+      for _, entry in ipairs(own_cycles) do
+        own_cycle_lines[#own_cycle_lines + 1] = entry.cycle
+        projection_cycles[#projection_cycles + 1] = {
+          view = view_key,
+          cycle = entry.cycle,
+          nodes = entry.nodes,
+        }
+      end
       views[view_key] = {
         key = view_key,
         nodes = nodes,
         display_edges = display_edges,
-        cycle_lines = own_cycle_lines,
+        cycle_lines = _array(own_cycle_lines),
         breadcrumb = {
           { key = "root", label = "root" },
         },
@@ -628,7 +707,7 @@ local function _build_views(modules, graph, dependencies, pinned_enabled)
     end
     view.cycle_lines = _array(aggregated)
   end
-  return views
+  return views, projection_cycles
 end
 
 function analyzer.analyze(resolved)
@@ -642,10 +721,13 @@ function analyzer.analyze(resolved)
   local modules = _build_modules(project_root, config)
   local graph = _build_graph(modules)
   local dependencies = _build_dependency_index(graph, modules)
-  local check = _build_check(graph, modules, config)
-  local views = _build_views(modules, graph, dependencies, pinned_enabled)
+  -- Views come first: the projection-cycle gate (arch_view #3) reads the same
+  -- layout cycles the viewer renders, so check is computed from the finished
+  -- views rather than from a separate traversal.
+  local views, projection_cycles = _build_views(modules, graph, dependencies, pinned_enabled)
+  local check = _build_check(graph, modules, config, projection_cycles)
   return {
-    schema_version = 2,
+    schema_version = 3,
     pinned_layers = pinned_enabled or nil,
     project_root = project_root,
     config_path = resolved.config_path,

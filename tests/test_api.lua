@@ -79,6 +79,127 @@ local function _write_sample_project(project_root)
     _write_file(common.join_path(project_root, "src/core_module.lua"), 'local init = require("init")\nreturn {}')
 end
 
+-- A project whose ONLY gate fact is a projection cycle: two modules that
+-- require each other. Everything is classified and no forbidden rule fires.
+local function _write_cycle_project(project_root, config_extra)
+    _mkdir(project_root)
+    _mkdir(common.join_path(project_root, "src"))
+    local config = [[
+{
+  "source_roots": ["src"],
+  "component_rules": [
+    {"name": "core", "match": ["^src$", "^src%..+"], "component": "core"}
+  ]
+]]
+    if config_extra ~= nil then
+        config = config .. ",\n" .. config_extra .. "\n"
+    end
+    config = config .. "}\n"
+    _write_file(common.join_path(project_root, "arch_view.config.json"), config)
+    _write_file(common.join_path(project_root, "src/init.lua"), "return {}")
+    _write_file(common.join_path(project_root, "src/alpha.lua"), 'local beta = require("src.beta")\nreturn {}')
+    _write_file(common.join_path(project_root, "src/beta.lua"), 'local alpha = require("src.alpha")\nreturn {}')
+end
+
+local function _analyze(project_root)
+    local architecture, err = arch_view.analyze({ project_root = project_root })
+    if architecture == nil then
+        error(err)
+    end
+    return architecture
+end
+
+local function _find_violation(check, kind)
+    for _, violation in ipairs(check.violations or {}) do
+        if violation.kind == kind then
+            return violation
+        end
+    end
+    return nil
+end
+
+-- Issue #3: check must report the projection cycle it sees (same layout the
+-- viewer renders) and fail closed — a cycle-only project is NOT ok.
+local function test_projection_cycle_fails_check()
+    _with_clean_tmp(function()
+        local project_root = common.join_path(tmp_root, "cycle_project")
+        _write_cycle_project(project_root)
+
+        local architecture = _analyze(project_root)
+        local check = architecture.check
+
+        lu.assertTrue(check.cycles == nil, "v3 drops the dead check.cycles shell")
+        lu.assertTrue(type(check.projection_cycles) == "table",
+            "check.projection_cycles must be a table")
+        lu.assertEquals(#check.projection_cycles, 1,
+            "the alpha<->beta cycle must be reported exactly once")
+        local entry = check.projection_cycles[1]
+        lu.assertEquals(entry.view, "root", "cycle entry names its owning view")
+        lu.assertEquals(entry.cycle, "alpha->beta->alpha",
+            "cycle entry carries the same closed line the viewer shows")
+        lu.assertEquals(entry.nodes, { "alpha", "beta" },
+            "cycle entry carries its participant nodes")
+        lu.assertTrue(entry.waived == false, "unwaived cycle is marked waived = false")
+
+        local violation = _find_violation(check, "projection_cycle")
+        lu.assertTrue(violation ~= nil, "unwaived cycle must produce a projection_cycle violation")
+        lu.assertEquals(violation.view, "root")
+        lu.assertEquals(violation.cycle, "alpha->beta->alpha")
+        lu.assertTrue(check.ok == false, "a projection cycle alone must fail the check")
+    end)
+end
+
+-- Issue #3: a config allowed_cycles entry matching view + participant set
+-- waives the cycle: reported as waived, no violation, check passes.
+local function test_allowed_cycles_waives_projection_cycle()
+    _with_clean_tmp(function()
+        local project_root = common.join_path(tmp_root, "waived_cycle_project")
+        _write_cycle_project(project_root, [[
+  "allowed_cycles": [
+    {"view": "root", "nodes": ["alpha", "beta"], "reason": "accepted pattern"}
+  ]
+]]
+        )
+
+        local architecture = _analyze(project_root)
+        local check = architecture.check
+
+        lu.assertEquals(#check.projection_cycles, 1, "waived cycle is still reported")
+        local entry = check.projection_cycles[1]
+        lu.assertTrue(entry.waived == true, "matched waiver marks the entry waived")
+        lu.assertEquals(entry.reason, "accepted pattern",
+            "waived entry carries the waiver's reason")
+        lu.assertTrue(_find_violation(check, "projection_cycle") == nil,
+            "waived cycle must NOT produce a violation")
+        lu.assertTrue(check.ok == true, "an all-waived cycle set passes the check")
+    end)
+end
+
+-- Issue #3: a waiver that does not match (different participants, or a
+-- different view) leaves the cycle unwaived and the check failing.
+local function test_unmatched_allowed_cycles_still_fails()
+    _with_clean_tmp(function()
+        local project_root = common.join_path(tmp_root, "unmatched_waiver_project")
+        _write_cycle_project(project_root, [[
+  "allowed_cycles": [
+    {"view": "root", "nodes": ["alpha", "gamma"]},
+    {"view": "other", "nodes": ["alpha", "beta"]}
+  ]
+]]
+        )
+
+        local architecture = _analyze(project_root)
+        local check = architecture.check
+
+        lu.assertEquals(#check.projection_cycles, 1)
+        lu.assertTrue(check.projection_cycles[1].waived == false,
+            "non-matching waivers must not waive the cycle")
+        lu.assertTrue(_find_violation(check, "projection_cycle") ~= nil,
+            "unwaived cycle still violates")
+        lu.assertTrue(check.ok == false, "unmatched waiver leaves the check failing")
+    end)
+end
+
 local function test_analyze_basic()
     _with_clean_tmp(function()
         local project_root = common.join_path(tmp_root, "analyze_project")
@@ -95,9 +216,9 @@ local function test_analyze_basic()
         lu.assertTrue(type(architecture.modules) == "table", "architecture should have modules")
         lu.assertTrue(type(architecture.check) == "table", "architecture should have check")
 
-        -- Contract v2 (monopoly #231): schema_version = 2 and the v1 dead
-        -- fields (redundant aliases, unconsumed shells) are gone.
-        lu.assertTrue(architecture.schema_version == 2, "schema_version should be 2")
+        -- Contract v3 (arch_view #3): schema_version = 3, projection cycles
+        -- are a real gate fact, and the v1/v2 dead fields stay gone.
+        lu.assertTrue(architecture.schema_version == 3, "schema_version should be 3")
         lu.assertTrue(architecture.layout == nil, "v2 drops the top-level layout shell")
         lu.assertTrue(architecture.classified_edges == nil, "v2 drops classified_edges (no consumers)")
         lu.assertTrue(architecture.projection_cycles == nil, "v2 drops the top-level projection_cycles shell")
@@ -197,7 +318,7 @@ local function test_export_viewer_in_json_roundtrip_v2()
 
         local exported = _read_file(common.join_path(result.out_dir, "architecture.json"))
         local decoded = json_reader.decode(exported)
-        lu.assertTrue(decoded.schema_version == 2, "--in-json roundtrip should carry schema_version = 2")
+        lu.assertTrue(decoded.schema_version == 3, "--in-json roundtrip should carry schema_version = 3")
         lu.assertTrue(decoded.layout == nil, "v2 JSON has no top-level layout shell")
         lu.assertTrue(decoded.classified_edges == nil, "v2 JSON has no classified_edges")
         lu.assertTrue(decoded.projection_cycles == nil, "v2 JSON has no top-level projection_cycles shell")
@@ -228,6 +349,9 @@ local function test_viewer_export_is_self_contained()
 end
 
 return {
+    test_projection_cycle_fails_check = test_projection_cycle_fails_check,
+    test_allowed_cycles_waives_projection_cycle = test_allowed_cycles_waives_projection_cycle,
+    test_unmatched_allowed_cycles_still_fails = test_unmatched_allowed_cycles_still_fails,
     test_analyze_basic = test_analyze_basic,
     test_check_returns_result = test_check_returns_result,
     test_write_scan_creates_file = test_write_scan_creates_file,

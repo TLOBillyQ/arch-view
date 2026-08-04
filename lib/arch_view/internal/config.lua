@@ -35,6 +35,43 @@ local function _validate_rule_list(field_name, rules)
     end, "must be a table")
 end
 
+-- Waiver entry shape (arch_view #3): { view = <non-empty string>,
+-- nodes = [<non-empty string>, ...], reason = <optional string> }.
+local function _validate_allowed_cycles(values)
+    if values == nil then
+        return true
+    end
+    if type(values) ~= "table" then
+        return nil, "allowed_cycles must be an array"
+    end
+    for key in pairs(values) do
+        if type(key) ~= "number" then
+            return nil, "allowed_cycles must be an array"
+        end
+    end
+    for index, entry in ipairs(values) do
+        local prefix = "allowed_cycles[" .. tostring(index) .. "]"
+        if type(entry) ~= "table" then
+            return nil, prefix .. " must be a table"
+        end
+        if type(entry.view) ~= "string" or entry.view == "" then
+            return nil, prefix .. ".view must be a non-empty string"
+        end
+        if type(entry.nodes) ~= "table" or #entry.nodes == 0 then
+            return nil, prefix .. ".nodes must be a non-empty array"
+        end
+        for _, node in ipairs(entry.nodes) do
+            if type(node) ~= "string" or node == "" then
+                return nil, prefix .. ".nodes must contain only non-empty strings"
+            end
+        end
+        if entry.reason ~= nil and type(entry.reason) ~= "string" then
+            return nil, prefix .. ".reason must be a string"
+        end
+    end
+    return true
+end
+
 local function _validate_config_shape(loaded)
     if type(loaded) ~= "table" then
         return nil, _text(
@@ -57,6 +94,11 @@ local function _validate_config_shape(loaded)
 
     if loaded.pinned_layers ~= nil and type(loaded.pinned_layers) ~= "boolean" then
         return nil, "pinned_layers must be a boolean"
+    end
+
+    ok, err = _validate_allowed_cycles(loaded.allowed_cycles)
+    if not ok then
+        return nil, err
     end
 
     for index, rule in ipairs(loaded.component_rules or {}) do

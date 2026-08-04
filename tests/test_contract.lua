@@ -152,6 +152,54 @@ local function test_check_shape()
     lu.assertTrue(type(check) == "table", "architecture.check must be a table")
     lu.assertTrue(type(check.ok) == "boolean", "check.ok must be a boolean")
     lu.assertTrue(type(check.violations) == "table", "check.violations must be a table")
+    lu.assertTrue(check.cycles == nil, "v3 drops the dead check.cycles shell")
+  end)
+end
+
+-- Projection cycles (arch_view #3) are a gate fact sourced from the SAME
+-- layout the viewer renders. check.projection_cycles lists every cycle once,
+-- owned by exactly one view, each entry carrying its owning view key, the
+-- closed "a->b->a" line (the string the viewer shows), the participant node
+-- names, and a boolean waived flag. The fixture's top<->mid<->base cycle must
+-- show up here.
+local function test_projection_cycles_shape()
+  _with_architecture(true, function(architecture)
+    local cycles = architecture.check.projection_cycles
+    lu.assertTrue(type(cycles) == "table", "check.projection_cycles must be a table")
+    lu.assertTrue(#cycles > 0, "the fixture's cycle must be reported in check.projection_cycles")
+    for _, entry in ipairs(cycles) do
+      lu.assertTrue(type(entry.view) == "string" and entry.view ~= "",
+        "a projection_cycles entry must carry its owning view key")
+      lu.assertTrue(type(entry.cycle) == "string" and entry.cycle:match("^%S+%-%>.*%S+$") ~= nil,
+        "a projection_cycles entry must carry the closed cycle line, got " .. tostring(entry.cycle))
+      lu.assertTrue(type(entry.nodes) == "table" and #entry.nodes >= 1,
+        "a projection_cycles entry must carry its participant nodes")
+      lu.assertTrue(type(entry.waived) == "boolean",
+        "a projection_cycles entry must carry a boolean waived flag")
+    end
+  end)
+end
+
+-- An unwaived projection cycle produces a projection_cycle violation (the
+-- fail-closed gate fact) naming its view and cycle line; with no waivers
+-- configured, every reported cycle violates.
+local function test_projection_cycle_violation_shape()
+  _with_architecture(true, function(architecture)
+    local check = architecture.check
+    local violation = _find_violation(check, "projection_cycle")
+    lu.assertTrue(violation ~= nil, "the fixture's unwaived cycle must violate")
+    lu.assertTrue(type(violation.view) == "string" and violation.view ~= "",
+      "projection_cycle violation must carry its view, got " .. tostring(violation.view))
+    lu.assertTrue(type(violation.cycle) == "string" and violation.cycle ~= "",
+      "projection_cycle violation must carry the cycle line")
+    local cycle_violations = 0
+    for _, v in ipairs(check.violations) do
+      if v.kind == "projection_cycle" then
+        cycle_violations = cycle_violations + 1
+      end
+    end
+    lu.assertEquals(cycle_violations, #check.projection_cycles,
+      "with no waivers, every reported cycle must violate exactly once")
   end)
 end
 
@@ -285,6 +333,8 @@ end
 return {
   test_schema_version_is_integer = test_schema_version_is_integer,
   test_check_shape = test_check_shape,
+  test_projection_cycles_shape = test_projection_cycles_shape,
+  test_projection_cycle_violation_shape = test_projection_cycle_violation_shape,
   test_every_violation_has_kind = test_every_violation_has_kind,
   test_forbidden_dependency_violation_shape = test_forbidden_dependency_violation_shape,
   test_unclassified_module_violation_shape = test_unclassified_module_violation_shape,
