@@ -51,14 +51,20 @@ end
 --   base -> foundation     integer -> substrate, always legal
 --   foundation -> mid      substrate -> integer-layered -> layer_violation
 --   orphan                 no component rule -> unclassified_module
+--
+-- mid also carries a component-internal subtree (mid.panel -> mid.model,
+-- both inheriting mid's layer 2): it gives the suite a non-root view, which
+-- is where the pinned scope (arch_view #4) shows — pinned pins the ROOT view
+-- only, so internal-view edges omit direction_violation entirely.
 local function _write_project(project_root)
   _mkdir(common.join_path(project_root, "src"))
+  _mkdir(common.join_path(project_root, "src/mid"))
   _write_file(common.join_path(project_root, "arch_view.config.json"), [[
 {
   "source_roots": ["src"],
   "component_rules": [
     { "name": "top", "match": ["^src%.top$"], "component": "top", "layer": 1 },
-    { "name": "mid", "match": ["^src%.mid$"], "component": "mid", "layer": 2 },
+    { "name": "mid", "match": ["^src%.mid$", "^src%.mid%..+"], "component": "mid", "layer": 2 },
     { "name": "base", "match": ["^src%.base$"], "component": "base", "layer": 3 },
     { "name": "foundation", "match": ["^src%.foundation$"], "component": "foundation", "substrate": true }
   ],
@@ -76,6 +82,9 @@ local function _write_project(project_root)
   _write_file(common.join_path(project_root, "src/top.lua"),
     'local mid = require("src.mid")\nlocal base = require("src.base")\nreturn {}')
   _write_file(common.join_path(project_root, "src/mid.lua"), 'local base = require("src.base")\nreturn {}')
+  _write_file(common.join_path(project_root, "src/mid/panel.lua"),
+    'local model = require("src.mid.model")\nreturn {}')
+  _write_file(common.join_path(project_root, "src/mid/model.lua"), "return {}")
   _write_file(common.join_path(project_root, "src/base.lua"),
     'local top = require("src.top")\nlocal foundation = require("src.foundation")\nreturn {}')
   _write_file(common.join_path(project_root, "src/foundation.lua"), 'local mid = require("src.mid")\nreturn {}')
@@ -277,23 +286,45 @@ local function test_dependency_into_substrate_is_legal()
   end)
 end
 
--- In pinned mode every view edge carries a boolean direction_violation
--- (arch_view #1); this is the presentation-side fact the review reads.
+-- In pinned mode every ROOT view edge carries a boolean direction_violation
+-- (arch_view #1); this is the presentation-side fact the review reads. The
+-- mode is scoped to the root view (arch_view #4): the root is the component-
+-- level view whose declared layer order the arrows are judged against.
 local function test_pinned_view_edges_have_direction_violation()
   _with_architecture(true, function(architecture)
-    local count = _each_view_edge(architecture, function(edge)
-      lu.assertTrue(type(edge.direction_violation) == "boolean",
-        "pinned-mode view edge must carry a boolean direction_violation")
-    end)
-    lu.assertTrue(count > 0, "fixture must produce at least one view edge")
-    -- base -> top is the upward edge; at least one direction_violation is true.
+    local root_view = architecture.views["root"]
+    lu.assertTrue(root_view ~= nil, "fixture must produce a root view")
+    local count = 0
     local saw_violation = false
-    _each_view_edge(architecture, function(edge)
+    for _, edge in ipairs(root_view.display_edges or {}) do
+      count = count + 1
+      lu.assertTrue(type(edge.direction_violation) == "boolean",
+        "pinned-mode root view edge must carry a boolean direction_violation")
       if edge.direction_violation == true then
         saw_violation = true
       end
-    end)
+    end
+    lu.assertTrue(count > 0, "fixture must produce at least one root view edge")
     lu.assertTrue(saw_violation, "the upward base->top edge must flag direction_violation = true")
+  end)
+end
+
+-- Pinned scope (arch_view #4): component-internal views fall back to the
+-- topological layout, so their edges omit direction_violation entirely (the
+-- field is absent, not false) — exactly as if the mode were off for that view.
+local function test_pinned_internal_view_edges_omit_direction_violation()
+  _with_architecture(true, function(architecture)
+    local count = 0
+    for view_key, view in pairs(architecture.views or {}) do
+      if view_key ~= "root" then
+        for _, edge in ipairs(view.display_edges or {}) do
+          count = count + 1
+          lu.assertTrue(edge.direction_violation == nil,
+            "pinned-mode internal view edge must omit direction_violation entirely")
+        end
+      end
+    end
+    lu.assertTrue(count > 0, "fixture must produce at least one internal view edge")
   end)
 end
 
@@ -342,6 +373,7 @@ return {
   test_substrate_upward_is_violation = test_substrate_upward_is_violation,
   test_dependency_into_substrate_is_legal = test_dependency_into_substrate_is_legal,
   test_pinned_view_edges_have_direction_violation = test_pinned_view_edges_have_direction_violation,
+  test_pinned_internal_view_edges_omit_direction_violation = test_pinned_internal_view_edges_omit_direction_violation,
   test_view_edges_have_cycle_break = test_view_edges_have_cycle_break,
   test_default_mode_omits_direction_violation = test_default_mode_omits_direction_violation,
 }

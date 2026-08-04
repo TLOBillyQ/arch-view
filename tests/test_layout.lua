@@ -584,6 +584,78 @@ local function test_analyzer_pinned_layers_end_to_end()
     end)
 end
 
+-- Pinned scope (arch_view #4): pinned applies to the ROOT view only, where
+-- nodes are the components and the declared layer order is the fact under
+-- review. Component-internal views have no declared ordering (every subview
+-- inherits the owning component's layer), so they fall back to the
+-- topological layout and their edges omit direction_violation entirely —
+-- exactly as if the mode were off for that view. The root view's rows and
+-- direction_violation behavior are byte-identical to the pre-#4 pinned mode.
+local function test_analyzer_pinned_scope_root_only()
+    local arch_view = require("arch_view")
+    local common = require("arch_view.runtime.common")
+
+    helpers.with_clean_tmp("arch_view_test_pinned_scope", function(tmp_root)
+        local project_root = common.join_path(tmp_root, "pinned_scope_project")
+        assert(common.ensure_dir(common.join_path(project_root, "src/ui")))
+        assert(common.write_file(common.join_path(project_root, "arch_view.config.json"), [==[
+{
+  "source_roots": ["src"],
+  "component_rules": [
+    {"name": "app", "match": ["^src%.app$"], "component": "app", "layer": 1},
+    {"name": "ui", "match": ["^src%.ui$", "^src%.ui%..+"], "component": "ui", "layer": 3}
+  ],
+  "pinned_layers": true
+}
+]==]))
+        assert(common.write_file(common.join_path(project_root, "src/app.lua"), "return {}\n"))
+        assert(common.write_file(common.join_path(project_root, "src/ui.lua"),
+            'local app = require("src.app")\nreturn {}\n'))
+        assert(common.write_file(common.join_path(project_root, "src/ui/panel.lua"),
+            'local model = require("src.ui.model")\nreturn {}\n'))
+        assert(common.write_file(common.join_path(project_root, "src/ui/model.lua"), "return {}\n"))
+
+        local architecture, analyze_err = arch_view.analyze({ project_root = project_root })
+        if architecture == nil then
+            error(analyze_err)
+        end
+        lu.assertEquals(architecture.pinned_layers, true, "top-level flag records the mode")
+
+        -- Root view: unchanged pinned behavior — app pinned on top by
+        -- declaration despite the upward ui->app edge, which is flagged.
+        local root_nodes = {}
+        for _, node in ipairs(architecture.views["root"].nodes) do
+            root_nodes[node.id] = node
+        end
+        lu.assertEquals(root_nodes["app"].layer, 0, "root still pins app on top by declaration")
+        lu.assertEquals(root_nodes["ui"].layer, 1, "root still pins ui to its declared row")
+        lu.assertEquals(architecture.views["root"].display_edges[1].direction_violation, true,
+            "root still flags the upward ui->app edge")
+
+        -- Component-internal view: both subviews inherit ui's declared layer
+        -- 3, so pinning would dense-rank them into one row; instead they fall
+        -- back to the topological layout (dependent on top) and the edge
+        -- carries no direction_violation field at all.
+        local ui_view = architecture.views["ui"]
+        _assert_true(ui_view ~= nil, "the component-internal ui view should exist")
+        local ui_nodes = {}
+        for _, node in ipairs(ui_view.nodes) do
+            ui_nodes[node.id] = node
+        end
+        lu.assertEquals(ui_nodes["panel"].component_layer, 3, "subview keeps its inherited declaration")
+        lu.assertEquals(ui_nodes["model"].component_layer, 3)
+        lu.assertEquals(ui_nodes["panel"].layer, 0, "internal view lays out topologically: dependent on top")
+        lu.assertEquals(ui_nodes["model"].layer, 1, "internal view keeps the dependency depth")
+        lu.assertEquals(#ui_view.display_edges, 1)
+        lu.assertEquals(ui_view.display_edges[1].direction_violation, nil,
+            "internal view edges omit direction_violation (topological fallback)")
+
+        -- Presentation-only: the layer gate still reads the declarations and
+        -- fails the upward root edge regardless of the layout scope.
+        lu.assertEquals(architecture.check.ok, false, "the upward edge still fails the layer gate")
+    end)
+end
+
 -- End-to-end: analyzer wires layout results into view nodes (layer, rect)
 -- and marks the removed feedback edge with cycle_break = true.
 local function test_analyzer_wires_layout_and_cycle_break()
@@ -741,6 +813,7 @@ return {
     test_pinned_undeclared_fall_below = test_pinned_undeclared_fall_below,
     test_pinned_empty_map_falls_back_to_topological = test_pinned_empty_map_falls_back_to_topological,
     test_analyzer_pinned_layers_end_to_end = test_analyzer_pinned_layers_end_to_end,
+    test_analyzer_pinned_scope_root_only = test_analyzer_pinned_scope_root_only,
     test_analyzer_wires_layout_and_cycle_break = test_analyzer_wires_layout_and_cycle_break,
     test_analyzer_fills_has_cycle_subtree = test_analyzer_fills_has_cycle_subtree,
 }

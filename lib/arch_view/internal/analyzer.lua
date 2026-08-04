@@ -557,6 +557,10 @@ end
 -- node pins its row, and every edge additionally gets a direction_violation
 -- boolean (true = upward against the declared layers); the field is absent
 -- entirely when the mode is off, keeping the default output byte-identical.
+-- The caller scopes the mode to the root view (arch_view #4): component-
+-- internal views have no declared ordering (every subview inherits the owning
+-- component's layer), so they always run with pinned_enabled = false and keep
+-- the topological dependency depth.
 -- Returns the view's own cycles as entries { cycle = "a->b->c->a" full-name
 -- line, nodes = participant names in path order (closing repeat dropped) } —
 -- the same layout facts the viewer renders red.
@@ -644,7 +648,12 @@ local function _build_views(modules, graph, dependencies, pinned_enabled)
     local nodes, buckets = _build_view_nodes(prefix, modules, dependencies)
     if #nodes > 0 then
       local display_edges = _build_view_edges(prefix, buckets, graph, modules)
-      local own_cycles = _apply_view_layout(nodes, display_edges, pinned_enabled)
+      -- Pinned scope (arch_view #4): pin rows by declaration in the root view
+      -- only — that is the component-level view where the declared layer
+      -- order is the fact under review. Every deeper view is component-
+      -- internal and falls back to the topological layout.
+      local own_cycles = _apply_view_layout(nodes, display_edges,
+        pinned_enabled and view_key == "root")
       local own_cycle_lines = {}
       for _, entry in ipairs(own_cycles) do
         own_cycle_lines[#own_cycle_lines + 1] = entry.cycle
