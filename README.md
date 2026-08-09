@@ -8,12 +8,12 @@ self-contained viewer bundle.
 
 ## Repository Layout
 
-- `lib/arch_view/init.lua`: public API entrypoint (`require("arch_view")`)
-- `lib/arch_view/cli.lua`: public CLI facade (`require("arch_view.cli")`)
-- `lib/arch_view/internal/analyzer.lua`: scan, classify, check, and view model generation
-- `lib/arch_view/internal/layout.lua`: pure layout engine (Tarjan SCC, feedback edges: exact minimum-set enumeration for small components, Eades greedy otherwise, longest-path layering, unclebob geometry)
-- `lib/arch_view/internal/service.lua`: public API orchestration and viewer export
-- `lib/arch_view/runtime/*`: filesystem, JSON, and path helpers
+- `src/arch_view/init.lua`: public API entrypoint (`require("arch_view")`)
+- `src/arch_view/cli.lua`: public CLI facade (`require("arch_view.cli")`)
+- `src/arch_view/internal/analyzer.lua`: scan, classify, check, and view model generation
+- `src/arch_view/internal/layout.lua`: pure layout engine (Tarjan SCC, feedback edges: exact minimum-set enumeration for small components, Eades greedy otherwise, longest-path layering, unclebob geometry)
+- `src/arch_view/internal/service.lua`: public API orchestration and viewer export
+- `src/arch_view/runtime/*`: filesystem, JSON, and path helpers
 - `lua/viewer/*`: static viewer assets (installed into the rock's lua dir by the builtin driver)
 - `tests/*`: golden-output regression infra (fixture, compare, bench)
 
@@ -24,7 +24,7 @@ public CLI facade is `require("arch_view.cli").run(args, env)`; any host can
 invoke it directly:
 
 ```sh
-lua -e 'package.path = "lib/?.lua;lib/?/init.lua;" .. package.path
+lua -e 'package.path = "src/?.lua;src/?/init.lua;" .. package.path
         os.exit(require("arch_view.cli").run(arg, {
           command_name = "arch_view",
           default_config_path = "arch_view.config.json",
@@ -48,14 +48,14 @@ Hosts typically wrap this in a small script; see the next section.
 ## Using arch_view in a new project (eggy example)
 
 1. Vendor the library, e.g. as a git submodule or a plain copy at
-   `eggy/vendor/arch_view` (keep `lib/` and `lua/viewer/`).
+   `eggy/vendor/arch_view` (keep `src/` and `lua/viewer/`).
 2. Write `eggy/arch_view.config.json` with your `source_roots`,
    `component_rules`, `abstract_rules`, and `forbidden_dependency_rules`
    (schema shown in the Config section below).
 3. Add a minimal wrapper, e.g. `eggy/tools/arch.lua`:
 
    ```lua
-   package.path = "vendor/arch_view/lib/?.lua;vendor/arch_view/lib/?/init.lua;"
+   package.path = "vendor/arch_view/src/?.lua;vendor/arch_view/src/?/init.lua;"
      .. package.path
    local cli = require("arch_view.cli")
    local ok = cli.run(arg or {}, {

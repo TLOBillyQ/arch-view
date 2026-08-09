@@ -7,7 +7,7 @@
 
 local script = arg[0] or "tests/run.lua"
 local root = script:match("^(.+)/tests/run%.lua$") or "."
-package.path = root .. "/lib/?.lua;" .. root .. "/lib/?/init.lua;" .. package.path
+package.path = root .. "/src/?.lua;" .. root .. "/src/?/init.lua;" .. package.path
 
 -- luaunit comes from luarocks, like the rest of the 4lua chain; make the
 -- per-user tree visible so a bare `lua tests/run.lua` works without a

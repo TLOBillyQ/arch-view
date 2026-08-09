@@ -5,14 +5,14 @@ local paths = {}
 
 function paths.package_root()
   local root = module_path.package_root(2)
-  if tostring(root):match("/lib$") then
+  if tostring(root):match("/src$") then
     return fs.parent_dir(root)
   end
   return root
 end
 
 -- Viewer assets resolve in two forms (matching the rockspec packaging):
--- - source / vendor tree: repo root has lib/ and lua/viewer/ (lua/ is the
+-- - source / vendor tree: repo root has src/ and lua/viewer/ (lua/ is the
 --   builtin install mirror), so package_root resolves to the repo root;
 -- - installed rock: the builtin driver copies lua/ into the lua dir, so the
 --   viewer lands at <lua_dir>/viewer and package_root is the lua dir itself.

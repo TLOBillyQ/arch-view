@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Syntax-check every Lua file under lib/ and tests/, plus the viewer's script.js.
+# Syntax-check every Lua file under src/ and tests/, plus the viewer's script.js.
 # Run from anywhere: tests/check_syntax.sh
 # Exit code 0 when every file parses, non-zero otherwise.
 set -u
@@ -41,7 +41,7 @@ check_lua() {
 
 while IFS= read -r file; do
   check_lua "$file"
-done < <(find lib tests -type f -name '*.lua' | sort)
+done < <(find src tests -type f -name '*.lua' | sort)
 
 if [ -n "$NODE" ]; then
   if message="$(node --check lua/viewer/script.js 2>&1)"; then

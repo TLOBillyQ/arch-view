@@ -1,4 +1,4 @@
--- Unit tests for the pure layout engine (lib/arch_view/internal/layout.lua):
+-- Unit tests for the pure layout engine (src/arch_view/internal/layout.lua):
 -- Tarjan SCC, exact minimum feedback edge enumeration for small components,
 -- Eades greedy fallback for larger ones, longest-path layering, and the
 -- unclebob arch-view coordinate formulas. No filesystem access here except

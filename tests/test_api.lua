@@ -2,6 +2,7 @@ local arch_view = require("arch_view")
 local lu = require("luaunit")
 local common = require("arch_view.runtime.common")
 local json_reader = require("arch_view.runtime.json_reader")
+local paths = require("arch_view.internal.paths")
 
 local helpers = dofile("tests/helpers.lua")
 
@@ -178,6 +179,12 @@ local function test_unmatched_allowed_cycles_still_fails()
     end)
 end
 
+local function test_source_package_root_finds_viewer_assets()
+    local asset_root = paths.default_asset_root()
+    lu.assertTrue(_exists(common.join_path(asset_root, "index.html")),
+        "source package should resolve viewer assets from lua/viewer")
+end
+
 local function test_analyze_basic()
     _with_clean_tmp(function()
         local project_root = common.join_path(tmp_root, "analyze_project")
@@ -330,6 +337,7 @@ return {
     test_projection_cycle_fails_check = test_projection_cycle_fails_check,
     test_allowed_cycles_waives_projection_cycle = test_allowed_cycles_waives_projection_cycle,
     test_unmatched_allowed_cycles_still_fails = test_unmatched_allowed_cycles_still_fails,
+    test_source_package_root_finds_viewer_assets = test_source_package_root_finds_viewer_assets,
     test_analyze_basic = test_analyze_basic,
     test_check_returns_result = test_check_returns_result,
     test_write_scan_creates_file = test_write_scan_creates_file,

@@ -31,7 +31,7 @@ function helpers.with_clean_tmp(name, fn)
 end
 
 -- Resolve the current working directory the same way the library does
--- (lib/arch_view/runtime/host.lua common.current_dir uses `pwd`), so the
+-- (src/arch_view/runtime/host.lua common.current_dir uses `pwd`), so the
 -- string we strip during normalization is exactly the string the library
 -- embeds into its output.
 function helpers.repo_root()
@@ -44,17 +44,17 @@ function helpers.repo_root()
   return (tostring(path):gsub("\\", "/"))
 end
 
--- Verify cwd is the repository root and prepend lib/ to package.path.
+-- Verify cwd is the repository root and prepend src/ to package.path.
 -- Returns the absolute repository root.
 function helpers.setup()
   local root = helpers.repo_root()
-  local probe = io.open(root .. "/lib/arch_view/init.lua", "rb")
+  local probe = io.open(root .. "/src/arch_view/init.lua", "rb")
   if probe == nil then
     helpers.fail("error: run this script from the repository root "
-      .. "(lib/arch_view/init.lua not found under " .. root .. ")")
+      .. "(src/arch_view/init.lua not found under " .. root .. ")")
   end
   probe:close()
-  package.path = root .. "/lib/?.lua;" .. root .. "/lib/?/init.lua;" .. package.path
+  package.path = root .. "/src/?.lua;" .. root .. "/src/?/init.lua;" .. package.path
   return root
 end
 
