@@ -2,7 +2,7 @@ rockspec_format = "3.0"
 package = "arch_view"
 version = "0.1.4-1"
 source = {
-   url = "git+http://lzxsvn:3000/qinyuanj/arch_view.git",
+   url = "git+http://lzxsvn:3000/eggy/arch-view.git",
    tag = "v0.1.4",
 }
 description = {
@@ -13,7 +13,7 @@ description = {
       classifies modules with JSON rules, checks forbidden dependencies, and
       exports a self-contained viewer bundle.
    ]],
-   homepage = "http://lzxsvn:3000/qinyuanj/arch_view",
+   homepage = "http://lzxsvn:3000/eggy/arch-view",
    license = "MIT",
 }
 dependencies = {

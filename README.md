@@ -1,5 +1,7 @@
 # arch_view
 
+> Test tooling follows the 4lua-chain convention: [acceptance4lua](http://lzxsvn:3000/eggy/acceptance4lua) · [crap4lua](http://lzxsvn:3000/eggy/crap4lua) · [dry4lua](http://lzxsvn:3000/eggy/dry4lua) · [mutate4lua](http://lzxsvn:3000/eggy/mutate4lua) (consumer only — no `4lua` topic).
+
 `arch_view` is a pure-Lua module dependency analyzer for Lua projects.
 
 It scans configured source roots, extracts static `require(...)` dependencies,
