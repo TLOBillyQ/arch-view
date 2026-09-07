@@ -121,6 +121,12 @@ local function _run_check(options)
     elseif violation.kind == "projection_cycle" then
       io.stderr:write("  ", _text("投影循环", "projection_cycle"), " ", tostring(violation.view), "\n")
       io.stderr:write("    ", tostring(violation.cycle), "\n")
+    elseif violation.kind == "layer_violation" then
+      -- Without this branch the generic fallback below prints violation.cycle
+      -- and violation.description, neither of which a layer_violation carries
+      -- (arch_view #8), so the offending edge never reaches the reader.
+      io.stderr:write("  ", _text("层级违规", "layer_violation"), " ", tostring(violation.from), " -> ", tostring(violation.to), "\n")
+      io.stderr:write("    ", _text("声明层级", "declared layers"), ": ", tostring(violation.from_layer), " -> ", tostring(violation.to_layer), "\n")
     else
       io.stderr:write("  ", tostring(violation.kind), " ", table.concat(violation.cycle or {}, ", "), "\n")
       io.stderr:write("    ", tostring(violation.description), "\n")

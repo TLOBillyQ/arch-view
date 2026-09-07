@@ -53,6 +53,25 @@ local function _write_sample_project(project_root)
     _write_file(common.join_path(project_root, "src/init.lua"), "return {}")
 end
 
+-- Capture everything cli.run writes to stderr while fn runs.
+local function _capture_stderr(fn)
+    local original = io.stderr
+    local chunks = {}
+    io.stderr = {
+        write = function(_, ...)
+            for _, part in ipairs({...}) do
+                chunks[#chunks + 1] = tostring(part)
+            end
+        end,
+    }
+    local ok, err = pcall(fn)
+    io.stderr = original
+    if not ok then
+        error(err)
+    end
+    return table.concat(chunks)
+end
+
 local function test_cli_scan_command()
     _with_clean_tmp(function()
         local project_root = common.join_path(tmp_root, "cli_scan")
@@ -114,6 +133,29 @@ local function test_cli_check_passes_with_waived_cycle()
         })
 
         lu.assertTrue(result == true, "cli check should pass when every cycle is waived")
+    end)
+end
+
+-- Issue #8: a layer_violation must name the offending edge and both declared
+-- layers. Before the dedicated branch it fell through to the generic fallback,
+-- which printed an empty line plus "nil".
+local function test_cli_check_reports_layer_violation_edge()
+    _with_clean_tmp(function()
+        local project_root = common.join_path(tmp_root, "cli_layer")
+        helpers.write_layer_violation_project(project_root)
+
+        local result
+        local report = _capture_stderr(function()
+            result = cli.run({"check"}, {
+                default_project_root = project_root,
+            })
+        end)
+
+        lu.assertTrue(result == false, "cli check should fail on an upward layer dependency")
+        lu.assertStrContains(report, "layer_violation")
+        lu.assertStrContains(report, "src.bottom -> src.top")
+        lu.assertStrContains(report, "2 -> 1")
+        lu.assertNotStrContains(report, "nil")
     end)
 end
 
@@ -190,6 +232,7 @@ return {
     test_cli_check_command = test_cli_check_command,
     test_cli_check_fails_on_projection_cycle = test_cli_check_fails_on_projection_cycle,
     test_cli_check_passes_with_waived_cycle = test_cli_check_passes_with_waived_cycle,
+    test_cli_check_reports_layer_violation_edge = test_cli_check_reports_layer_violation_edge,
     test_cli_viewer_command = test_cli_viewer_command,
     test_cli_respects_project_root = test_cli_respects_project_root,
     test_cli_viewer_respects_project_root_for_relative_out_dir = test_cli_viewer_respects_project_root_for_relative_out_dir,

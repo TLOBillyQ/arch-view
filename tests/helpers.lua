@@ -159,4 +159,27 @@ function helpers.write_cycle_project(project_root, config_extra)
   assert(common.write_file(common.join_path(project_root, "src/beta.lua"), 'local alpha = require("src.alpha")\nreturn {}'))
 end
 
+-- Write a project whose ONLY gate fact is a layer violation (arch_view #8):
+-- two layered components where the lower one requires the higher one.
+-- No cycle, no forbidden rule, everything classified.
+function helpers.write_layer_violation_project(project_root)
+  local common = require("arch_view.runtime.common")
+  assert(common.ensure_dir(project_root))
+  assert(common.ensure_dir(common.join_path(project_root, "src")))
+  assert(common.write_file(common.join_path(project_root, "arch_view.config.json"), [[
+{
+  "source_roots": ["src"],
+  "component_rules": [
+    {"name": "top", "match": ["^src$", "^src%.top$"], "component": "top", "layer": 1},
+    {"name": "bottom", "match": ["^src%.bottom$"], "component": "bottom", "layer": 2}
+  ]
+}
+]]))
+  assert(common.write_file(common.join_path(project_root, "src/init.lua"), "return {}"))
+  assert(common.write_file(common.join_path(project_root, "src/top.lua"), "return {}"))
+  -- bottom (L2) reaching up to top (L1) is the upward dependency the gate rejects.
+  assert(common.write_file(common.join_path(project_root, "src/bottom.lua"),
+    'local top = require("src.top")\nreturn {}'))
+end
+
 return helpers
